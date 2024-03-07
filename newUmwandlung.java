@@ -1,5 +1,3 @@
-//javac -cp .;lib\* newUmwandlung.java
-//java -cp .;lib\* newUmwandlung
 import org.camunda.bpm.model.bpmn.Bpmn;
 import org.camunda.bpm.model.bpmn.BpmnModelInstance;
 import org.camunda.bpm.model.bpmn.GatewayDirection;
@@ -30,6 +28,8 @@ import org.camunda.bpm.model.bpmn.instance.DataObjectReference;
 import org.camunda.bpm.model.bpmn.instance.DataAssociation;
 import org.camunda.bpm.model.bpmn.instance.DataOutputAssociation;
 import org.camunda.bpm.model.bpmn.instance.DataInputAssociation;
+import org.camunda.bpm.model.bpmn.instance.Expression;
+import org.camunda.bpm.model.bpmn.instance.ConditionExpression;
 
 
 import edu.stanford.nlp.simple.*;
@@ -79,6 +79,13 @@ class MyActivity extends MyFlowNode {
         super(sentenceID, tokenID);
         this.label = label;
         this.performer = performer;
+        this.usedDataObjects = new ArrayList<>();
+    }
+
+    // Konstruktor
+    public MyActivity(Integer sentenceID, Integer tokenID, String label) {
+        super(sentenceID, tokenID);
+        this.label = label;
         this.usedDataObjects = new ArrayList<>();
     }
 
@@ -177,11 +184,19 @@ abstract class MyFlowNode {
 class MyFlow {
     private MyFlowNode head;
     private MyFlowNode tail;
+    private String condition;
 
     // Konstruktor
     public MyFlow(MyFlowNode head, MyFlowNode tail) {
         this.head = head;
         this.tail = tail;
+    }
+
+    // Konstruktor
+    public MyFlow(MyFlowNode head, MyFlowNode tail, String condition) {
+        this.head = head;
+        this.tail = tail;
+        this.condition = condition;
     }
 
     // Getter-Methoden
@@ -191,6 +206,10 @@ class MyFlow {
 
     public MyFlowNode getTail() {
         return tail;
+    }
+
+    public String getCondition() {
+        return condition;
     }
 }
 
@@ -211,17 +230,17 @@ public class newUmwandlung {
     public static void main(String[] args) {
 
         // Ich muss hier noch den filePath automatisch machen, dass ich nicht händisch den Dukumentennamen setzen muss
-        String filePath = "jsonFiles/doc-10_1.json";
+        String filePath = "jsonFiles/doc-5_1.json";
 
         ObjectMapper objectMapper = new ObjectMapper();
         try {
             File jsonFile = new File(filePath);
             JsonNode rootNode = objectMapper.readTree(jsonFile);
-            JsonNode relationsNode = rootNode.get("doc-10_1").get(0).get("relations");
-            JsonNode sentenceIDsNode = rootNode.get("doc-10_1").get(0).get("sentence-IDs");
-            JsonNode ner_tagsNode = rootNode.get("doc-10_1").get(0).get("ner_tags");
-            JsonNode tokenIDsNode = rootNode.get("doc-10_1").get(0).get("token-IDs");
-            JsonNode tokensNode = rootNode.get("doc-10_1").get(0).get("tokens");
+            JsonNode relationsNode = rootNode.get("doc-5_1").get(0).get("relations");
+            JsonNode sentenceIDsNode = rootNode.get("doc-5_1").get(0).get("sentence-IDs");
+            JsonNode ner_tagsNode = rootNode.get("doc-5_1").get(0).get("ner_tags");
+            JsonNode tokenIDsNode = rootNode.get("doc-5_1").get(0).get("token-IDs");
+            JsonNode tokensNode = rootNode.get("doc-5_1").get(0).get("tokens");
 
             for (JsonNode relationNode : relationsNode) {
 
@@ -293,6 +312,81 @@ public class newUmwandlung {
                 }
             }
 
+            // restliche Aktivitäten einfügen, die nicht in Actor Performer sind
+            for (JsonNode relationNode : relationsNode) {
+                String relationType = relationNode.get(2).asText();
+
+                if ("flow".equals(relationType)) {
+                    Integer flowOutSentenceID = relationNode.get(0).asInt();
+                    Integer flowOutTokenID = relationNode.get(1).asInt();
+
+                    Integer flowInSentenceID = relationNode.get(3).asInt();
+                    Integer flowInTokenID = relationNode.get(4).asInt();
+
+                    Iterator<JsonNode> sentenceIDIterator = sentenceIDsNode.iterator();
+                    Iterator<JsonNode> tokenIDIterator = tokenIDsNode.iterator();
+                    Iterator<JsonNode> ner_tagsIterator = ner_tagsNode.iterator();
+
+                    int position = 0;
+
+                    while (sentenceIDIterator.hasNext() && tokenIDIterator.hasNext() && ner_tagsIterator.hasNext()) {
+                        int currentSentenceID = sentenceIDIterator.next().asInt();
+                        int currentTokenID = tokenIDIterator.next().asInt();
+
+                        if (currentSentenceID == flowInSentenceID && currentTokenID == flowInTokenID) {
+                            String nerTag = ner_tagsNode.get(position).asText();
+
+                            if (nerTag.equals("B-Activity")) {
+
+                                Iterator<MyActivity> activityIterator = activities.iterator();
+                                boolean found = false;
+
+                                while (activityIterator.hasNext()) {
+                                    MyActivity activity = activityIterator.next();
+                                    if (activity.getSentenceID() == flowInSentenceID && activity.getTokenID() == flowInTokenID) {
+                                        found = true;
+                                        break;
+                                    }
+                                }
+            
+                                if (!found) {
+                                    String activityLabel = activityLabeling(ner_tagsNode, tokensNode, position);
+                                    MyActivity newActivity = new MyActivity(flowInSentenceID, flowInTokenID, activityLabel);
+                                    activities.add(newActivity);
+                                }
+                            }
+                        }
+
+                        if (currentSentenceID == flowOutSentenceID && currentTokenID == flowOutTokenID) {
+                            String nerTag = ner_tagsNode.get(position).asText();
+
+                            if (nerTag.equals("B-Activity")) {
+
+                                Iterator<MyActivity> activityIterator = activities.iterator();
+                                boolean found = false;
+
+                                while (activityIterator.hasNext()) {
+                                    MyActivity activity = activityIterator.next();
+                                    if (activity.getSentenceID() == flowOutSentenceID && activity.getTokenID() == flowOutTokenID) {
+                                        found = true;
+                                        break;
+                                    }
+                                }
+            
+                                if (!found) {
+                                    String activityLabel = activityLabeling(ner_tagsNode, tokensNode, position);
+                                    MyActivity newActivity = new MyActivity(flowOutSentenceID, flowOutTokenID, activityLabel);
+                                    activities.add(newActivity);
+                                }
+                            }
+                        }
+                        position++;
+                    }
+                }
+            }
+
+
+
             for (JsonNode relationNode : relationsNode) {
                 String relationType = relationNode.get(2).asText();
 
@@ -337,6 +431,7 @@ public class newUmwandlung {
                 }
             }
 
+            // Gateways und Flows einfügen
             for (JsonNode relationNode : relationsNode) {
                 String relationType = relationNode.get(2).asText();
 
@@ -410,12 +505,94 @@ public class newUmwandlung {
                     }
                 }                 
             }
-            
+
+            // Condition Specification einfügen
+            for (JsonNode relationNode : relationsNode) {
+                String relationType = relationNode.get(2).asText();
+
+                if ("flow".equals(relationType)) {
+                    Integer flowOutSentenceID = relationNode.get(0).asInt();
+                    Integer flowOutTokenID = relationNode.get(1).asInt();
+
+                    Integer flowInSentenceID = relationNode.get(3).asInt();
+                    Integer flowInTokenID = relationNode.get(4).asInt();
+
+                    Iterator<JsonNode> sentenceIDIterator = sentenceIDsNode.iterator();
+                    Iterator<JsonNode> tokenIDIterator = tokenIDsNode.iterator();
+
+                    int position = 0;
+
+                    while (sentenceIDIterator.hasNext() && tokenIDIterator.hasNext()) {
+                        int currentSentenceID = sentenceIDIterator.next().asInt();
+                        int currentTokenID = tokenIDIterator.next().asInt();
+
+                        if (currentSentenceID == flowInSentenceID && currentTokenID == flowInTokenID) {
+                            String nerTag = ner_tagsNode.get(position).asText();
+
+                            if (nerTag.equals("B-Condition Specification")) {
+                                String conditionLabel = conditionLabeling(ner_tagsNode, tokensNode, position);
+
+                                for (JsonNode relationNodeCond : relationsNode) {
+                                    String relationTypeCond = relationNodeCond.get(2).asText();
+
+                                    if ("flow".equals(relationType)) {
+                                        Integer flowOutSentenceIDCond = relationNodeCond.get(0).asInt();
+                                        Integer flowOutTokenIDCond = relationNodeCond.get(1).asInt();
+
+                                        if (flowInSentenceID == flowOutSentenceIDCond && flowInTokenID == flowOutTokenIDCond) {
+                                            Integer flowInSentenceIDCond = relationNodeCond.get(3).asInt();
+                                            Integer flowInTokenIDCond = relationNodeCond.get(4).asInt();
+
+                                            MyActivity existingOutActivity = getActivityBySIDANDTID(flowOutSentenceID, flowOutTokenID);
+                                            MyGateway existingOutGateway = getGatewayByID(flowOutSentenceID, flowOutTokenID);
+
+                                            MyActivity existingInActivity = getActivityBySIDANDTID(flowInSentenceIDCond, flowInTokenIDCond);
+                                            MyGateway existingInGateway = getGatewayByID(flowInSentenceIDCond, flowInTokenIDCond);
+
+                                            if (existingOutActivity != null && existingInActivity != null) {
+                                                MyFlow flow = new MyFlow(existingOutActivity, existingInActivity, conditionLabel);
+                                                flows.add(flow);
+                                            }
+
+                                            if (existingOutActivity != null && existingInGateway != null) {
+                                                MyFlow flow = new MyFlow(existingOutActivity, existingInGateway, conditionLabel);
+                                                flows.add(flow);
+                                            }
+                                            
+                                            if (existingOutGateway != null && existingInActivity != null) {
+                                                MyFlow flow = new MyFlow(existingOutGateway, existingInActivity, conditionLabel);
+                                                flows.add(flow);
+                                            }
+
+                                            if (existingOutGateway != null && existingInGateway != null) {
+                                                MyFlow flow = new MyFlow(existingOutGateway, existingInGateway, conditionLabel);
+                                                flows.add(flow);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        position++;
+                    }
+                }
+            }
+
+
 
 
         } catch (IOException e) {
             e.printStackTrace();
         }
+
+
+
+
+
+
+
+
+
 
 
         BpmnModelInstance modelInstance = Bpmn.createEmptyModel();
@@ -460,7 +637,7 @@ public class newUmwandlung {
 
         try {
             Bpmn.validateModel(modelInstance);
-            File file = new File("doc-10_1.bpmn.xml");
+            File file = new File("doc-5_1.bpmn.xml");
             file.createNewFile();
     
             String bpmnString = Bpmn.convertToString(modelInstance);
@@ -503,6 +680,8 @@ public class newUmwandlung {
 
         pipeline.annotate(document);
 
+        List<String> cleanedTokens = new ArrayList<>();
+
         List<CoreMap> sentences = document.get(CoreAnnotations.SentencesAnnotation.class);
         for (CoreMap sentence : sentences) {
             for (CoreMap token : sentence.get(CoreAnnotations.TokensAnnotation.class)) {
@@ -510,11 +689,12 @@ public class newUmwandlung {
                 String pos = token.get(CoreAnnotations.PartOfSpeechAnnotation.class);
 
                 // POS-Tags überprüfen und entfernen 
-                if (pos.equals("DT") || pos.equals("IN")) {
-                    actorLabel = actorLabel.replace(word, "").trim();
+                if (!pos.equals("DT") && !pos.equals("IN")) {
+                    cleanedTokens.add(word);
                 }
             }
         }
+        actorLabel = String.join("_", cleanedTokens);
 
         return actorLabel;
     }
@@ -653,6 +833,52 @@ public class newUmwandlung {
 
 
 
+    private static String conditionLabeling(JsonNode ner_tagsNode, JsonNode tokensNode, int position) {
+        String conditionLabel = tokensNode.get(position).asText();
+        position++;
+
+        for(int i = position; i < tokensNode.size(); i++) {
+            String tag = ner_tagsNode.get(i).asText();
+
+            if (tag.equals("I-Condition Specification")) {
+                String token = tokensNode.get(i).asText();
+                conditionLabel = conditionLabel + " " + token;
+            }
+
+            else {
+                break;
+            }
+        }
+
+        Properties props = new Properties();
+        props.setProperty("annotators", "tokenize, ssplit, pos");
+        StanfordCoreNLP pipeline = new StanfordCoreNLP(props);
+
+        Annotation document = new Annotation(conditionLabel);
+
+        pipeline.annotate(document);
+
+        List<String> cleanedTokens = new ArrayList<>();
+
+        List<CoreMap> sentences = document.get(CoreAnnotations.SentencesAnnotation.class);
+        for (CoreMap sentence : sentences) {
+            for (CoreMap token : sentence.get(CoreAnnotations.TokensAnnotation.class)) {
+                String word = token.get(CoreAnnotations.TextAnnotation.class);
+                String pos = token.get(CoreAnnotations.PartOfSpeechAnnotation.class);
+
+                // POS-Tags überprüfen und entfernen 
+                if (!pos.equals("DT") && !pos.equals("IN")) {
+                    cleanedTokens.add(word);
+                }
+            }
+        }
+        conditionLabel = String.join("_", cleanedTokens);
+
+        return conditionLabel;
+    }
+
+
+
     private static void dataObjectGenerating(MyDataObject myDataObject, BpmnModelInstance modelInstance, Process process) {
         DataObject dataObject = modelInstance.newInstance(DataObject.class);
         dataObject.setId(myDataObject.getLabel());
@@ -716,13 +942,31 @@ public class newUmwandlung {
 
 
     private static void flowGenerating(MyFlow flow, BpmnModelInstance modelInstance, Process process) {
-        String headID = "ID-" + flow.getHead().getSentenceID() + "-" + flow.getHead().getTokenID();
-        String tailID = "ID-" + flow.getTail().getSentenceID() + "-" + flow.getTail().getTokenID();
+        if (flow.getCondition() == null) {
+            String headID = "ID-" + flow.getHead().getSentenceID() + "-" + flow.getHead().getTokenID();
+            String tailID = "ID-" + flow.getTail().getSentenceID() + "-" + flow.getTail().getTokenID();
 
-        SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
-        sequenceFlow.setSource(modelInstance.getModelElementById(headID));
-        sequenceFlow.setTarget(modelInstance.getModelElementById(tailID));
-        process.addChildElement(sequenceFlow);
+            SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
+            sequenceFlow.setSource(modelInstance.getModelElementById(headID));
+            sequenceFlow.setTarget(modelInstance.getModelElementById(tailID));
+            process.addChildElement(sequenceFlow);
+        }
+
+        if (!(flow.getCondition() == null)) {
+            String headID = "ID-" + flow.getHead().getSentenceID() + "-" + flow.getHead().getTokenID();
+            String tailID = "ID-" + flow.getTail().getSentenceID() + "-" + flow.getTail().getTokenID();
+
+            SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
+            sequenceFlow.setSource(modelInstance.getModelElementById(headID));
+            sequenceFlow.setTarget(modelInstance.getModelElementById(tailID));
+
+            ConditionExpression conditionExpression = modelInstance.newInstance(ConditionExpression.class);
+            conditionExpression.setTextContent(flow.getCondition());
+
+            sequenceFlow.setConditionExpression(conditionExpression);
+
+            process.addChildElement(sequenceFlow);
+        }
     }
 
 
@@ -737,11 +981,11 @@ public class newUmwandlung {
                     String firstActivityID = "ID-" + activity.getSentenceID() + "-" + activity.getTokenID();
 
                     StartEvent startEvent = modelInstance.newInstance(StartEvent.class);
-                    startEvent.setId("start");
+                    startEvent.setId(firstActivityID + "start");
                     process.addChildElement(startEvent);
 
                     SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
-                    sequenceFlow.setSource(modelInstance.getModelElementById("start"));
+                    sequenceFlow.setSource(modelInstance.getModelElementById(firstActivityID + "start"));
                     sequenceFlow.setTarget(modelInstance.getModelElementById(firstActivityID));
                     process.addChildElement(sequenceFlow);
 
