@@ -30,6 +30,14 @@ import org.camunda.bpm.model.bpmn.instance.DataOutputAssociation;
 import org.camunda.bpm.model.bpmn.instance.DataInputAssociation;
 import org.camunda.bpm.model.bpmn.instance.Expression;
 import org.camunda.bpm.model.bpmn.instance.ConditionExpression;
+import org.camunda.bpm.model.bpmn.instance.ExtensionElements;
+import org.camunda.bpm.model.bpmn.instance.camunda.CamundaProperties;
+import org.camunda.bpm.model.bpmn.instance.camunda.CamundaProperty;
+import org.camunda.bpm.model.bpmn.instance.ServiceTask;
+import org.camunda.bpm.model.bpmn.instance.SendTask;
+import org.camunda.bpm.model.bpmn.instance.Message;
+import org.camunda.bpm.model.bpmn.instance.MessageFlow;
+import org.camunda.bpm.model.bpmn.instance.MessageEventDefinition;
 
 
 import edu.stanford.nlp.simple.*;
@@ -72,7 +80,9 @@ class MyActor {
 class MyActivity extends MyFlowNode {
     private String label;
     private MyActor performer;
+    private MyActor recipient;
     private List<MyDataObject> usedDataObjects;
+    private String furtherSpecification;
 
     // Konstruktor
     public MyActivity(Integer sentenceID, Integer tokenID, String label, MyActor performer) {
@@ -80,6 +90,7 @@ class MyActivity extends MyFlowNode {
         this.label = label;
         this.performer = performer;
         this.usedDataObjects = new ArrayList<>();
+        this.furtherSpecification = null;
     }
 
     // Konstruktor
@@ -87,6 +98,7 @@ class MyActivity extends MyFlowNode {
         super(sentenceID, tokenID);
         this.label = label;
         this.usedDataObjects = new ArrayList<>();
+        this.furtherSpecification = null;
     }
 
     // Getter-Methoden
@@ -110,6 +122,21 @@ class MyActivity extends MyFlowNode {
         return usedDataObjects;
     }
 
+    public MyActor getRecipient() {
+        return recipient;
+    }
+
+    public String getFurtherSpecification() {
+        return furtherSpecification;
+    }
+
+    public void setRecipient(MyActor receiver) {
+        recipient = receiver;
+    }
+
+    public void setFurtherSpecification(String specification) {
+        furtherSpecification = specification;
+    }
 
     public void addUsedDataObject(MyDataObject dataObject) {
         usedDataObjects.add(dataObject);
@@ -133,14 +160,33 @@ class MyDataObject {
 }
 
 
+// Klasse als Hilfe für Sonderfall Condition Specification ohne Folgeaktivität/-gateway
+class MyEndevent extends MyFlowNode {
+    // Konstruktor
+    public MyEndevent(Integer sentenceID, Integer tokenID) {
+        super(sentenceID, tokenID);
+    }
+
+    // Getter-Methoden
+    public Integer getSentenceID() {
+        return sentenceID;
+    }
+
+    public Integer getTokenID() {
+        return tokenID;
+    }
+}
+
 
 class MyGateway extends MyFlowNode {
     private String type;
+    private List<String> mentions;
 
     // Konstruktor
     public MyGateway(String type, Integer sentenceID, Integer tokenID) {
         super(sentenceID, tokenID);
         this.type = type;
+        this.mentions = new ArrayList<>();
     }
 
     // Getter-Methoden
@@ -154,6 +200,14 @@ class MyGateway extends MyFlowNode {
 
     public Integer getTokenID() {
         return tokenID;
+    }
+
+    public List<String> getMentions() {
+        return mentions;
+    }
+
+    public void addMention(String mention) {
+        mentions.add(mention);
     }
 }
 
@@ -228,19 +282,28 @@ public class newUmwandlung {
     private static List<MyFlow> flows = new ArrayList<>();
 
     public static void main(String[] args) {
+        if (args.length == 0) {
+            System.out.println("Bitte geben Sie den Dateipfad zur JSON-Datei als Argument ein.");
+            return;
+        }
 
-        // Ich muss hier noch den filePath automatisch machen, dass ich nicht händisch den Dukumentennamen setzen muss
-        String filePath = "jsonFiles/doc-5_1.json";
+        String filePath = args[0];
+        String fileNameJson = new File(filePath).getName();
+        String fileName = fileNameJson.replaceFirst("[.][^.]+$", "");
+
+        System.out.println(filePath);
+        System.out.println(fileName);
 
         ObjectMapper objectMapper = new ObjectMapper();
         try {
             File jsonFile = new File(filePath);
             JsonNode rootNode = objectMapper.readTree(jsonFile);
-            JsonNode relationsNode = rootNode.get("doc-5_1").get(0).get("relations");
-            JsonNode sentenceIDsNode = rootNode.get("doc-5_1").get(0).get("sentence-IDs");
-            JsonNode ner_tagsNode = rootNode.get("doc-5_1").get(0).get("ner_tags");
-            JsonNode tokenIDsNode = rootNode.get("doc-5_1").get(0).get("token-IDs");
-            JsonNode tokensNode = rootNode.get("doc-5_1").get(0).get("tokens");
+            JsonNode docNode = rootNode.get(fileName);
+            JsonNode relationsNode = docNode.get(0).get("relations");
+            JsonNode sentenceIDsNode = docNode.get(0).get("sentence-IDs");
+            JsonNode ner_tagsNode = docNode.get(0).get("ner_tags");
+            JsonNode tokenIDsNode = docNode.get(0).get("token-IDs");
+            JsonNode tokensNode = docNode.get(0).get("tokens");
 
             for (JsonNode relationNode : relationsNode) {
 
@@ -387,6 +450,53 @@ public class newUmwandlung {
 
 
 
+            // actor recipient
+            for (JsonNode relationNode : relationsNode) {
+                String relationType = relationNode.get(2).asText();
+
+                String actorLabel = null;
+
+                if ("actor recipient".equals(relationType)) {
+                    int activitySentenceID = relationNode.get(0).asInt();
+                    int activityTokenID = relationNode.get(1).asInt();
+
+                    int actorSentenceID = relationNode.get(3).asInt();
+                    int actorTokenID = relationNode.get(4).asInt();
+
+                    Iterator<JsonNode> sentenceIDIterator = sentenceIDsNode.iterator();
+                    Iterator<JsonNode> tokenIDIterator = tokenIDsNode.iterator();
+
+                    int position = 0;
+                    while (sentenceIDIterator.hasNext() && tokenIDIterator.hasNext()) {
+                        int currentSentenceID = sentenceIDIterator.next().asInt();
+                        int currentTokenID = tokenIDIterator.next().asInt();
+
+                        if (currentSentenceID == actorSentenceID && currentTokenID == actorTokenID) {
+                            actorLabel = actorLabeling(ner_tagsNode, tokensNode, position);
+
+                            MyActor existingActor = getActorByName(actorLabel);
+
+                            if (existingActor == null) {
+                                MyActor actor = new MyActor(actorLabel); 
+                                actors.add(actor);
+                            }
+
+                            break;
+                        }
+                        position++;
+                    }
+                    MyActivity activity = getActivityBySIDANDTID(activitySentenceID, activityTokenID);
+                    MyActor recipient = getActorByName(actorLabel);
+
+                    if (activity != null && recipient != null) {
+                        activity.setRecipient(recipient);
+                    }
+                }
+            }
+
+
+
+            // Data Object
             for (JsonNode relationNode : relationsNode) {
                 String relationType = relationNode.get(2).asText();
 
@@ -431,7 +541,186 @@ public class newUmwandlung {
                 }
             }
 
-            // Gateways und Flows einfügen
+
+            // Gateways 
+            for (JsonNode relationNode : relationsNode) {
+                String relationType = relationNode.get(2).asText();
+
+                if ("flow".equals(relationType)) {
+                    Integer flowOutSentenceID = relationNode.get(0).asInt();
+                    Integer flowOutTokenID = relationNode.get(1).asInt();
+
+                    Integer flowInSentenceID = relationNode.get(3).asInt();
+                    Integer flowInTokenID = relationNode.get(4).asInt();
+
+                    // FlowOut Gateways
+                    Iterator<JsonNode> sentenceIDIterator = sentenceIDsNode.iterator();
+                    Iterator<JsonNode> tokenIDIterator = tokenIDsNode.iterator();
+
+                    int position = 0;
+
+                    while (sentenceIDIterator.hasNext() && tokenIDIterator.hasNext()) {
+                        int currentSentenceID = sentenceIDIterator.next().asInt();
+                        int currentTokenID = tokenIDIterator.next().asInt();
+
+                        if (currentSentenceID == flowOutSentenceID && currentTokenID == flowOutTokenID) {
+                            String nerTag = ner_tagsNode.get(position).asText();
+
+                            if (nerTag.equals("B-XOR Gateway")) {
+                                String type = "xor";
+
+                                // FlowOut(head) XOR Gateways
+                                MyGateway existingGateway = getGatewayByID(flowOutSentenceID, flowOutTokenID);
+
+                                if (existingGateway != null) {
+                                    break;
+                                }
+
+                                boolean sameGatewayExists = sameGatewayExist(relationsNode, flowOutSentenceID, flowOutTokenID);
+
+                                if (sameGatewayExists == false) {
+                                    MyGateway gateway = new MyGateway(type, flowOutSentenceID, flowOutTokenID);
+                                    gateway.addMention(flowOutSentenceID + "-" + flowOutTokenID);
+                                    gateways.add(gateway);
+                                    break;
+                                }
+
+                                MyGateway sameGateway = getSameGateway(relationsNode, flowOutSentenceID, flowOutTokenID);
+
+                                if (sameGateway == null) {
+                                    MyGateway gateway = new MyGateway(type, flowOutSentenceID, flowOutTokenID);
+                                    gateway.addMention(flowOutSentenceID + "-" + flowOutTokenID);
+                                    gateways.add(gateway);
+                                    break;
+                                }
+
+                                sameGateway.addMention(flowOutSentenceID + "-" + flowOutTokenID);
+                                break;
+                            }
+
+                            if (nerTag.equals("B-AND Gateway")) {
+                                String type = "and";
+
+                                // FlowOut(head) AND Gateways
+                                MyGateway existingGateway = getGatewayByID(flowOutSentenceID, flowOutTokenID);
+
+                                if (existingGateway != null) {
+                                    break;
+                                }
+
+                                boolean sameGatewayExists = sameGatewayExist(relationsNode, flowOutSentenceID, flowOutTokenID);
+
+                                if (sameGatewayExists == false) {
+                                    MyGateway gateway = new MyGateway(type, flowOutSentenceID, flowOutTokenID);
+                                    gateway.addMention(flowOutSentenceID + "-" + flowOutTokenID);
+                                    gateways.add(gateway);
+                                    break;
+                                }
+
+                                MyGateway sameGateway = getSameGateway(relationsNode, flowOutSentenceID, flowOutTokenID);
+
+                                if (sameGateway == null) {
+                                    MyGateway gateway = new MyGateway(type, flowOutSentenceID, flowOutTokenID);
+                                    gateway.addMention(flowOutSentenceID + "-" + flowOutTokenID);
+                                    gateways.add(gateway);
+                                    break;
+                                }
+
+                                sameGateway.addMention(flowOutSentenceID +  "-" + flowOutTokenID);
+                                break;
+                            }
+                            break;
+                        }
+                        position++; 
+                    }
+
+
+                    sentenceIDIterator = sentenceIDsNode.iterator();
+                    tokenIDIterator = tokenIDsNode.iterator();
+
+                    position = 0;
+
+                    // FlowIn Gateways
+                    while (sentenceIDIterator.hasNext() && tokenIDIterator.hasNext()) {
+                        int currentSentenceID = sentenceIDIterator.next().asInt();
+                        int currentTokenID = tokenIDIterator.next().asInt();
+
+                        if (currentSentenceID == flowInSentenceID && currentTokenID == flowInTokenID) {
+                            String nerTag = ner_tagsNode.get(position).asText();
+
+                            if (nerTag.equals("B-XOR Gateway")) {
+                                String type = "xor";
+
+                                // FlowIn(tail) XOR Gateways
+                                MyGateway existingGateway = getGatewayByID(flowInSentenceID, flowInTokenID);
+
+                                if (existingGateway != null) {
+                                    break;
+                                }
+
+                                boolean sameGatewayExists = sameGatewayExist(relationsNode, flowInSentenceID, flowInTokenID);
+
+                                if (sameGatewayExists == false) {
+                                    MyGateway gateway = new MyGateway(type, flowInSentenceID, flowInTokenID);
+                                    gateway.addMention(flowInSentenceID + "-" + flowInTokenID);
+                                    gateways.add(gateway);
+                                    break;
+                                }
+
+                                MyGateway sameGateway = getSameGateway(relationsNode, flowInSentenceID, flowInTokenID);
+
+                                if (sameGateway == null) {
+                                    MyGateway gateway = new MyGateway(type, flowInSentenceID, flowInTokenID);
+                                    gateway.addMention(flowInSentenceID + "-" + flowInTokenID);
+                                    gateways.add(gateway);
+                                    break;
+                                }
+
+                                sameGateway.addMention(flowInSentenceID + "-" + flowInTokenID);
+                                break;
+
+                            }
+
+                            if (nerTag.equals("B-AND Gateway")) {
+                                String type = "and";
+
+                                // FlowIn(tail) AND Gateways
+                                MyGateway existingGateway = getGatewayByID(flowInSentenceID, flowInTokenID);
+
+                                if (existingGateway != null) {
+                                    break;
+                                }
+
+                                boolean sameGatewayExists = sameGatewayExist(relationsNode, flowInSentenceID, flowInTokenID);
+
+                                if (sameGatewayExists == false) {
+                                    MyGateway gateway = new MyGateway(type, flowInSentenceID, flowInTokenID);
+                                    gateway.addMention(flowInSentenceID + "-" + flowInTokenID);
+                                    gateways.add(gateway);
+                                    break;
+                                }
+
+                                MyGateway sameGateway = getSameGateway(relationsNode, flowInSentenceID, flowInTokenID);
+
+                                if (sameGateway == null) {
+                                    MyGateway gateway = new MyGateway(type, flowInSentenceID, flowInTokenID);
+                                    gateway.addMention(flowInSentenceID + "-" + flowInTokenID);
+                                    gateways.add(gateway);
+                                    break;
+                                }
+
+                                sameGateway.addMention(flowInSentenceID + "-" + flowInTokenID);
+                                break;
+                            }
+                            break;
+                        }
+                        position++; 
+                    }
+                }                 
+            }
+
+
+            //Flows
             for (JsonNode relationNode : relationsNode) {
                 String relationType = relationNode.get(2).asText();
 
@@ -446,37 +735,6 @@ public class newUmwandlung {
                     Iterator<JsonNode> tokenIDIterator = tokenIDsNode.iterator();
 
                     int position = 0;
-
-                    while (sentenceIDIterator.hasNext() && tokenIDIterator.hasNext()) {
-                        int currentSentenceID = sentenceIDIterator.next().asInt();
-                        int currentTokenID = tokenIDIterator.next().asInt();
-
-                        if (currentSentenceID == flowInSentenceID && currentTokenID == flowInTokenID) {
-                            String nerTag = ner_tagsNode.get(position).asText();
-
-                            if (nerTag.equals("B-XOR Gateway")) {
-                                String type = "xor";
-                                MyGateway existingGateway = getGatewayByID(flowInSentenceID, flowInTokenID);
-
-                                if (existingGateway == null) {
-                                    MyGateway gateway = new MyGateway(type, flowInSentenceID, flowInTokenID);
-                                    gateways.add(gateway);
-                                }
-                            }
-    
-                            if (nerTag.equals("B-AND Gateway")) {
-                                String type = "and";
-                                MyGateway existingGateway = getGatewayByID(flowInSentenceID, flowInTokenID);
-
-                                if (existingGateway == null) {
-                                    MyGateway gateway = new MyGateway(type, flowInSentenceID, flowInTokenID);
-                                    gateways.add(gateway);
-                                }
-                            }
-                            break;
-                        }
-                        position++; 
-                    }
 
                     MyActivity existingOutActivity = getActivityBySIDANDTID(flowOutSentenceID, flowOutTokenID);
                     MyGateway existingOutGateway = getGatewayByID(flowOutSentenceID, flowOutTokenID);
@@ -503,8 +761,10 @@ public class newUmwandlung {
                         MyFlow flow = new MyFlow(existingOutGateway, existingInGateway);
                         flows.add(flow);
                     }
-                }                 
+                }
             }
+
+
 
             // Condition Specification einfügen
             for (JsonNode relationNode : relationsNode) {
@@ -532,6 +792,9 @@ public class newUmwandlung {
                             if (nerTag.equals("B-Condition Specification")) {
                                 String conditionLabel = conditionLabeling(ner_tagsNode, tokensNode, position);
 
+                                int index = 0;
+                                int maxIterations = relationsNode.size();
+
                                 for (JsonNode relationNodeCond : relationsNode) {
                                     String relationTypeCond = relationNodeCond.get(2).asText();
 
@@ -552,31 +815,87 @@ public class newUmwandlung {
                                             if (existingOutActivity != null && existingInActivity != null) {
                                                 MyFlow flow = new MyFlow(existingOutActivity, existingInActivity, conditionLabel);
                                                 flows.add(flow);
+                                                break;
                                             }
 
                                             if (existingOutActivity != null && existingInGateway != null) {
                                                 MyFlow flow = new MyFlow(existingOutActivity, existingInGateway, conditionLabel);
                                                 flows.add(flow);
+                                                break;
                                             }
                                             
                                             if (existingOutGateway != null && existingInActivity != null) {
                                                 MyFlow flow = new MyFlow(existingOutGateway, existingInActivity, conditionLabel);
                                                 flows.add(flow);
+                                                break;
                                             }
 
                                             if (existingOutGateway != null && existingInGateway != null) {
                                                 MyFlow flow = new MyFlow(existingOutGateway, existingInGateway, conditionLabel);
                                                 flows.add(flow);
+                                                break;
                                             }
                                         }
                                     }
-                                }
+
+                                    if (index == maxIterations - 1) {
+                                        // Condition Specification hat keinen augehenden Flow -> Endevent stattdessen(einzigartige Endevent ID finden)
+                                        int maxTokens = tokensNode.size();
+                                        MyEndevent endevent = new MyEndevent(maxTokens + flowInSentenceID + 1, maxTokens + flowInTokenID + 1);
+
+                                        MyGateway existingOuGateway = getGatewayByID(flowOutSentenceID, flowOutTokenID);
+
+                                        MyFlow flow = new MyFlow(existingOuGateway, endevent, conditionLabel);
+                                        flows.add(flow);
+                                    }
+
+                                    index++;
+                                }                 
                             }
                         }
                         position++;
                     }
                 }
             }
+
+
+
+            for (JsonNode relationNode : relationsNode) {
+                String relationType = relationNode.get(2).asText();
+
+                String furtherSpecification = null;
+
+                if ("further specification".equals(relationType)) {
+                    int activitySentenceID = relationNode.get(0).asInt();
+                    int activityTokenID = relationNode.get(1).asInt();
+
+                    int specSentenceID = relationNode.get(3).asInt();
+                    int specTokenID = relationNode.get(4).asInt();
+
+                    Iterator<JsonNode> sentenceIDIterator = sentenceIDsNode.iterator();
+                    Iterator<JsonNode> tokenIDIterator = tokenIDsNode.iterator();
+
+                    int position = 0;
+
+                    while (sentenceIDIterator.hasNext() && tokenIDIterator.hasNext()) {
+                        int currentSentenceID = sentenceIDIterator.next().asInt();
+                        int currentTokenID = tokenIDIterator.next().asInt();
+
+                        if (currentSentenceID == specSentenceID && currentTokenID == specTokenID) {
+                            furtherSpecification = furtherSpecificationLabeling(ner_tagsNode, tokensNode, position);
+
+                            MyActivity activity = getActivityBySIDANDTID(activitySentenceID, activityTokenID);
+                            activity.setFurtherSpecification(furtherSpecification);
+
+                            break;
+                        }
+                        position++;
+                    }
+                }
+            }
+
+
+
 
 
 
@@ -616,7 +935,7 @@ public class newUmwandlung {
         }
 
         for (MyActivity activity : activities) {
-            activityGenerating(activity, modelInstance, process);
+            activityGenerating(activity, modelInstance, process, laneSet);
         }
 
         for (MyGateway gateway : gateways) {
@@ -624,7 +943,7 @@ public class newUmwandlung {
         }
 
         for (MyFlow flow : flows) {
-            flowGenerating(flow, modelInstance, process);
+            flowGenerating(flow, modelInstance, process, flows);
         }
 
         startEventGenerating(modelInstance, process);
@@ -654,6 +973,16 @@ public class newUmwandlung {
 
 
 
+
+    private static void connect(SequenceFlow flow, FlowNode from, FlowNode to) {
+        flow.setSource(from);
+        from.getOutgoing().add(flow);
+        flow.setTarget(to);
+        to.getIncoming().add(flow);
+    }
+
+
+
     private static String actorLabeling(JsonNode ner_tagsNode, JsonNode tokensNode, int position) {
         String actorLabel = tokensNode.get(position).asText();
         position++;
@@ -675,9 +1004,7 @@ public class newUmwandlung {
         Properties props = new Properties();
         props.setProperty("annotators", "tokenize, ssplit, pos");
         StanfordCoreNLP pipeline = new StanfordCoreNLP(props);
-
         Annotation document = new Annotation(actorLabel);
-
         pipeline.annotate(document);
 
         List<String> cleanedTokens = new ArrayList<>();
@@ -713,6 +1040,41 @@ public class newUmwandlung {
 
 
 
+    private static boolean sameGatewayExist(JsonNode relationsNode, int sentenceID, int tokenID) {
+        for (JsonNode relationNode : relationsNode) {
+            String relationType = relationNode.get(2).asText();
+
+            if ("same gateway".equals(relationType)) {
+                if (relationNode.get(0).asInt() == sentenceID && relationNode.get(1).asInt() == tokenID) {
+                    return true;
+                }
+                if (relationNode.get(3).asInt() == sentenceID && relationNode.get(4).asInt() == tokenID) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+
+    private static MyGateway getSameGateway(JsonNode relationsNode, int sentenceID, int tokenID) {
+        for (JsonNode relationNode : relationsNode) {
+            String relationType = relationNode.get(2).asText();
+
+            if ("same gateway".equals(relationType)) {
+                if (relationNode.get(0).asInt() == sentenceID && relationNode.get(1).asInt() == tokenID) {
+                    MyGateway sameGateway = getGatewayByID(relationNode.get(3).asInt(), relationNode.get(4).asInt());
+                    return sameGateway;
+                }
+                if (relationNode.get(3).asInt() == sentenceID && relationNode.get(4).asInt() == tokenID) {
+                    MyGateway sameGateway = getGatewayByID(relationNode.get(0).asInt(), relationNode.get(1).asInt());
+                    return sameGateway;
+                }
+            }
+        }
+        return null;
+    }
+
 
     private static String activityLabeling(JsonNode ner_tagsNode, JsonNode tokensNode, int position) {
         String activityLabel = tokensNode.get(position).asText();
@@ -743,7 +1105,11 @@ public class newUmwandlung {
             lemmatizedSentence.append(tok.lemma()).append(" ");
         }
 
-        return lemmatizedSentence.toString().trim();
+        activityLabel = lemmatizedSentence.toString().trim();
+        String[] words = activityLabel.split("\\s+");
+        activityLabel = String.join("_", words);
+
+        return activityLabel; 
     }
 
 
@@ -768,10 +1134,10 @@ public class newUmwandlung {
         Properties props = new Properties();
         props.setProperty("annotators", "tokenize, ssplit, pos");
         StanfordCoreNLP pipeline = new StanfordCoreNLP(props);
-
         Annotation document = new Annotation(dataObjectLabel);
-
         pipeline.annotate(document);
+
+        List<String> cleanedTokens = new ArrayList<>();
 
         List<CoreMap> sentences = document.get(CoreAnnotations.SentencesAnnotation.class);
         for (CoreMap sentence : sentences) {
@@ -780,13 +1146,51 @@ public class newUmwandlung {
                 String pos = token.get(CoreAnnotations.PartOfSpeechAnnotation.class);
 
                 // POS-Tags überprüfen und entfernen 
-                if (pos.equals("DT") || pos.equals("IN")) {
-                    dataObjectLabel = dataObjectLabel.replace(word, "").trim();
+                if (!pos.equals("DT") && !pos.equals("IN")) {
+                    cleanedTokens.add(word);
                 }
             }
         }
+        dataObjectLabel = String.join("_", cleanedTokens);
 
         return dataObjectLabel;
+    }
+
+
+
+    private static String furtherSpecificationLabeling(JsonNode ner_tagsNode, JsonNode tokensNode, int position) {
+        String furtherSpecificationLabel = tokensNode.get(position).asText();
+        position++;
+
+        for(int i = position; i < tokensNode.size(); i++) {
+            String tag = ner_tagsNode.get(i).asText();
+
+            if (tag.equals("I-Further Specification")) {
+                String token = tokensNode.get(i).asText();
+                furtherSpecificationLabel = furtherSpecificationLabel + " " + token;
+            }
+
+            else {
+                break;
+            }
+        }
+
+        Properties props = new Properties();
+        props.setProperty("annotators", "tokenize,pos,lemma");
+        StanfordCoreNLP pipeline = new StanfordCoreNLP(props);
+        CoreDocument document = pipeline.processToCoreDocument(furtherSpecificationLabel);
+        StringBuilder lemmatizedSentence = new StringBuilder();
+
+        for (CoreLabel tok : document.tokens()) {
+            System.out.println(String.format("%s\t%s", tok.word(), tok.lemma()));
+            lemmatizedSentence.append(tok.lemma()).append(" ");
+        }
+
+        furtherSpecificationLabel = lemmatizedSentence.toString().trim();
+        String[] words = furtherSpecificationLabel.split("\\s+");
+        furtherSpecificationLabel = String.join("_", words);
+
+        return furtherSpecificationLabel;
     }
 
 
@@ -814,9 +1218,13 @@ public class newUmwandlung {
     
 
     private static MyGateway getGatewayByID(int sentenceID, int tokenID) {
+        String mentionID = sentenceID + "-" + tokenID;
+
         for (MyGateway gateway : gateways) {
-            if (gateway.getSentenceID().equals(sentenceID) && gateway.getTokenID().equals(tokenID)) {
-                return gateway;
+            for (String mention : gateway.getMentions()) {
+                if (mention.equals(mentionID)) {
+                    return gateway;
+                }
             }
         }
         return null;
@@ -893,20 +1301,179 @@ public class newUmwandlung {
 
 
 
-    private static void activityGenerating(MyActivity activity, BpmnModelInstance modelInstance, Process process) {
-        UserTask userTask = modelInstance.newInstance(UserTask.class);
-        userTask.setId("ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
-        userTask.setName(activity.getLabel());
-        process.addChildElement(userTask);
+    private static void activityGenerating(MyActivity activity, BpmnModelInstance modelInstance, Process process, LaneSet laneSet) {
+        if (activity.getRecipient() == null) {
+            if (activity.getPerformer() == null) {
+                boolean laneExist = laneExisting("SystemLane", laneSet);
+                if (!laneExist) {
+                    Lane lane = modelInstance.newInstance(Lane.class);
+                    lane.setId("SystemLane");
+                    lane.setName("SystemLane");
+                    laneSet.addChildElement(lane);
+                }
+                ServiceTask serviceTask = modelInstance.newInstance(ServiceTask.class);
+                serviceTask.setId("ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
+                serviceTask.setName(activity.getLabel());
+                process.addChildElement(serviceTask);
 
-        for (MyDataObject data : activity.getUsedDataObjects()) {
-            String dataObjectReferenceId = data.getLabel() + "-Reference";
-            DataObjectReference dataObjectReference = getDataObjectReferenceById(modelInstance, dataObjectReferenceId);
-            
-            DataInputAssociation association = modelInstance.newInstance(DataInputAssociation.class);
-            association.setTarget(dataObjectReference);
-            userTask.addChildElement(association);
+                for (MyDataObject data : activity.getUsedDataObjects()) {
+                    String dataObjectReferenceId = data.getLabel() + "-Reference";
+                    DataObjectReference dataObjectReference = getDataObjectReferenceById(modelInstance, dataObjectReferenceId);
+                    
+                    DataInputAssociation association = modelInstance.newInstance(DataInputAssociation.class);
+                    association.setTarget(dataObjectReference);
+                    serviceTask.addChildElement(association);
+                }
+
+                if (activity.getFurtherSpecification() != null) {
+                    CamundaProperties camundaProperties = modelInstance.newInstance(CamundaProperties.class);
+                    serviceTask.builder().addExtensionElement(camundaProperties);
+
+                    CamundaProperty property = modelInstance.newInstance(CamundaProperty.class);
+                    property.setCamundaName("Kommentar");
+                    property.setCamundaValue(activity.getFurtherSpecification());
+                    serviceTask.builder().addExtensionElement(property);
+                }
+            }
+
+            if (activity.getPerformer() != null) {
+                UserTask userTask = modelInstance.newInstance(UserTask.class);
+                userTask.setId("ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
+                userTask.setName(activity.getLabel());
+                process.addChildElement(userTask);
+
+                for (MyDataObject data : activity.getUsedDataObjects()) {
+                    String dataObjectReferenceId = data.getLabel() + "-Reference";
+                    DataObjectReference dataObjectReference = getDataObjectReferenceById(modelInstance, dataObjectReferenceId);
+                    
+                    DataInputAssociation association = modelInstance.newInstance(DataInputAssociation.class);
+                    association.setTarget(dataObjectReference);
+                    userTask.addChildElement(association);
+                }
+
+                if (activity.getFurtherSpecification() != null) {
+                    CamundaProperties camundaProperties = modelInstance.newInstance(CamundaProperties.class);
+                    userTask.builder().addExtensionElement(camundaProperties);
+
+                    CamundaProperty property = modelInstance.newInstance(CamundaProperty.class);
+                    property.setCamundaName("Kommentar");
+                    property.setCamundaValue(activity.getFurtherSpecification());
+                    userTask.builder().addExtensionElement(property);
+                }
+            }
         }
+        else {
+            if (activity.getPerformer() == null) {
+                boolean laneExist = laneExisting("SystemLane", laneSet);
+                if (!laneExist) {
+                    Lane lane = modelInstance.newInstance(Lane.class);
+                    lane.setId("SystemLane");
+                    lane.setName("SystemLane");
+                    laneSet.addChildElement(lane);
+                }
+                SendTask sendTask = modelInstance.newInstance(SendTask.class);
+                sendTask.setId("ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
+                sendTask.setName(activity.getLabel());
+                process.addChildElement(sendTask);
+
+                Message message = modelInstance.newInstance(Message.class);
+                message.setName("message");
+                message.setId("message-ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
+
+                Definitions definitions = modelInstance.getDefinitions();
+                definitions.addChildElement(message);
+
+                MessageEventDefinition messageEventDefinition = modelInstance.newInstance(MessageEventDefinition.class);
+                messageEventDefinition.setMessage(message);
+
+                EndEvent messageEndEvent = modelInstance.newInstance(EndEvent.class);
+                messageEndEvent.setId("endEvent-message-ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
+                messageEndEvent.setName("endEvent-message-ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
+                messageEndEvent.getEventDefinitions().add(messageEventDefinition);
+                process.addChildElement(messageEndEvent);
+
+                SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
+                sequenceFlow.setSource(sendTask);
+                sequenceFlow.setTarget(messageEndEvent);
+                process.addChildElement(sequenceFlow);
+
+                for (MyDataObject data : activity.getUsedDataObjects()) {
+                    String dataObjectReferenceId = data.getLabel() + "-Reference";
+                    DataObjectReference dataObjectReference = getDataObjectReferenceById(modelInstance, dataObjectReferenceId);
+                    
+                    DataInputAssociation association = modelInstance.newInstance(DataInputAssociation.class);
+                    association.setTarget(dataObjectReference);
+                    sendTask.addChildElement(association);
+                }
+
+                if (activity.getFurtherSpecification() != null) {
+                    CamundaProperties camundaProperties = modelInstance.newInstance(CamundaProperties.class);
+                    sendTask.builder().addExtensionElement(camundaProperties);
+
+                    CamundaProperty property = modelInstance.newInstance(CamundaProperty.class);
+                    property.setCamundaName("Kommentar");
+                    property.setCamundaValue(activity.getFurtherSpecification());
+                    sendTask.builder().addExtensionElement(property);
+                }
+            }
+
+            if (activity.getPerformer() != null) {
+                SendTask sendTask = modelInstance.newInstance(SendTask.class);
+                sendTask.setId("ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
+                sendTask.setName(activity.getLabel());
+                process.addChildElement(sendTask);
+
+                Message message = modelInstance.newInstance(Message.class);
+                message.setName("message");
+                message.setId("message-ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
+
+                Definitions definitions = modelInstance.getDefinitions();
+                definitions.addChildElement(message);
+
+                MessageEventDefinition messageEventDefinition = modelInstance.newInstance(MessageEventDefinition.class);
+                messageEventDefinition.setMessage(message);
+
+                EndEvent messageEndEvent = modelInstance.newInstance(EndEvent.class);
+                messageEndEvent.setId("endEvent-message-ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
+                messageEndEvent.setName("endEvent-message-ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
+                messageEndEvent.getEventDefinitions().add(messageEventDefinition);
+                process.addChildElement(messageEndEvent);
+
+                SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
+                sequenceFlow.setSource(sendTask);
+                sequenceFlow.setTarget(messageEndEvent);
+                process.addChildElement(sequenceFlow);
+
+                for (MyDataObject data : activity.getUsedDataObjects()) {
+                    String dataObjectReferenceId = data.getLabel() + "-Reference";
+                    DataObjectReference dataObjectReference = getDataObjectReferenceById(modelInstance, dataObjectReferenceId);
+                    
+                    DataInputAssociation association = modelInstance.newInstance(DataInputAssociation.class);
+                    association.setTarget(dataObjectReference);
+                    sendTask.addChildElement(association);
+                }
+
+                if (activity.getFurtherSpecification() != null) {
+                    CamundaProperties camundaProperties = modelInstance.newInstance(CamundaProperties.class);
+                    sendTask.builder().addExtensionElement(camundaProperties);
+
+                    CamundaProperty property = modelInstance.newInstance(CamundaProperty.class);
+                    property.setCamundaName("Kommentar");
+                    property.setCamundaValue(activity.getFurtherSpecification());
+                    sendTask.builder().addExtensionElement(property);
+                }
+            }
+        }
+    }
+
+
+    private static boolean laneExisting(String name, LaneSet laneSet) {
+        for (Lane lane : laneSet.getLanes()) {
+            if (lane.getName() != null && lane.getName().equals(name)) {
+                return true;
+            }
+        }
+        return false;
     }
 
 
@@ -941,31 +1508,132 @@ public class newUmwandlung {
 
 
 
-    private static void flowGenerating(MyFlow flow, BpmnModelInstance modelInstance, Process process) {
-        if (flow.getCondition() == null) {
-            String headID = "ID-" + flow.getHead().getSentenceID() + "-" + flow.getHead().getTokenID();
-            String tailID = "ID-" + flow.getTail().getSentenceID() + "-" + flow.getTail().getTokenID();
+    private static void flowGenerating(MyFlow flow, BpmnModelInstance modelInstance, Process process, List<MyFlow> flows) {
+        if (flow.getTail() instanceof MyEndevent) {
+            if (flow.getCondition() == null) {
+                String headID = "ID-" + flow.getHead().getSentenceID() + "-" + flow.getHead().getTokenID();
+                String tailID = "ID-" + flow.getTail().getSentenceID() + "-" + flow.getTail().getTokenID();
 
-            SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
-            sequenceFlow.setSource(modelInstance.getModelElementById(headID));
-            sequenceFlow.setTarget(modelInstance.getModelElementById(tailID));
-            process.addChildElement(sequenceFlow);
+                EndEvent endEvent = modelInstance.newInstance(EndEvent.class);
+                endEvent.setId("endEvent-" + tailID);
+                endEvent.setName("endEvent-" + tailID);
+                process.addChildElement(endEvent);
+
+                SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
+                process.addChildElement(sequenceFlow);
+                FlowNode sourceElement = (FlowNode) modelInstance.getModelElementById(headID);
+                FlowNode targetElement = (FlowNode) modelInstance.getModelElementById("endEvent-" + tailID);
+                connect(sequenceFlow, sourceElement, targetElement);
+                /*sequenceFlow.setSource(modelInstance.getModelElementById(headID));
+                sequenceFlow.setTarget(modelInstance.getModelElementById("endEvent-" + tailID));*/
+
+
+            }
+
+            if (!(flow.getCondition() == null)) {
+                String headID = "ID-" + flow.getHead().getSentenceID() + "-" + flow.getHead().getTokenID();
+                String tailID = "ID-" + flow.getTail().getSentenceID() + "-" + flow.getTail().getTokenID();
+
+                EndEvent endEvent = modelInstance.newInstance(EndEvent.class);
+                endEvent.setId("endEvent-" + tailID);
+                endEvent.setName("endEvent-" + tailID);
+                process.addChildElement(endEvent);
+
+                SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
+                process.addChildElement(sequenceFlow);
+                FlowNode sourceElement = (FlowNode) modelInstance.getModelElementById(headID);
+                FlowNode targetElement = (FlowNode) modelInstance.getModelElementById("endEvent-" + tailID);
+                connect(sequenceFlow, sourceElement, targetElement);
+                //sequenceFlow.setSource(modelInstance.getModelElementById(headID));
+                //sequenceFlow.setTarget(modelInstance.getModelElementById("endEvent-" + tailID));
+
+                ConditionExpression conditionExpression = modelInstance.newInstance(ConditionExpression.class);
+                conditionExpression.setTextContent(flow.getCondition());
+
+                sequenceFlow.setConditionExpression(conditionExpression);
+
+                process.addChildElement(sequenceFlow);
+            }
         }
+        else {
+            if (flow.getCondition() == null) {
+                String headID = "ID-" + flow.getHead().getSentenceID() + "-" + flow.getHead().getTokenID();
+                String tailID = "ID-" + flow.getTail().getSentenceID() + "-" + flow.getTail().getTokenID();
 
-        if (!(flow.getCondition() == null)) {
-            String headID = "ID-" + flow.getHead().getSentenceID() + "-" + flow.getHead().getTokenID();
-            String tailID = "ID-" + flow.getTail().getSentenceID() + "-" + flow.getTail().getTokenID();
+                SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
+                process.addChildElement(sequenceFlow);
+                FlowNode sourceElement = (FlowNode) modelInstance.getModelElementById(headID);
+                FlowNode targetElement = (FlowNode) modelInstance.getModelElementById(tailID);
+                connect(sequenceFlow, sourceElement, targetElement);
+                //sequenceFlow.setSource(modelInstance.getModelElementById(headID));
+                //sequenceFlow.setTarget(modelInstance.getModelElementById(tailID));
 
-            SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
-            sequenceFlow.setSource(modelInstance.getModelElementById(headID));
-            sequenceFlow.setTarget(modelInstance.getModelElementById(tailID));
+                if (flow.getHead() instanceof MyGateway) {
+                    int numberOfOutgoings = 0;
+                    for (MyFlow flow2 : flows) {
+                        if (flow2.getHead().getSentenceID() == flow.getHead().getSentenceID() && flow2.getHead().getTokenID() == flow.getHead().getTokenID()) {
+                            numberOfOutgoings++;
+                        }
+                    }
+                    if (numberOfOutgoings < 2) {
+                        EndEvent endEvent = modelInstance.newInstance(EndEvent.class);
+                        endEvent.setId("endEvent-" + headID);
+                        endEvent.setName("endEvent-" + headID);
+                        process.addChildElement(endEvent);
 
-            ConditionExpression conditionExpression = modelInstance.newInstance(ConditionExpression.class);
-            conditionExpression.setTextContent(flow.getCondition());
+                        SequenceFlow sequenceFlow2 = modelInstance.newInstance(SequenceFlow.class);
+                        process.addChildElement(sequenceFlow2);
+                        sourceElement = (FlowNode) modelInstance.getModelElementById(headID);
+                        targetElement = (FlowNode) modelInstance.getModelElementById("endEvent-" + tailID);
+                        connect(sequenceFlow2, sourceElement, targetElement);
+                        //sequenceFlow2.setSource(modelInstance.getModelElementById(headID));
+                        //sequenceFlow2.setTarget(modelInstance.getModelElementById("endEvent-" + tailID));
+                    }
+                }
+            }
 
-            sequenceFlow.setConditionExpression(conditionExpression);
+            if (!(flow.getCondition() == null)) {
+                String headID = "ID-" + flow.getHead().getSentenceID() + "-" + flow.getHead().getTokenID();
+                String tailID = "ID-" + flow.getTail().getSentenceID() + "-" + flow.getTail().getTokenID();
 
-            process.addChildElement(sequenceFlow);
+                SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
+                process.addChildElement(sequenceFlow);
+                FlowNode sourceElement = (FlowNode) modelInstance.getModelElementById(headID);
+                FlowNode targetElement = (FlowNode) modelInstance.getModelElementById(tailID);
+                connect(sequenceFlow, sourceElement, targetElement);
+                //sequenceFlow.setSource(modelInstance.getModelElementById(headID));
+                //sequenceFlow.setTarget(modelInstance.getModelElementById(tailID));
+
+                ConditionExpression conditionExpression = modelInstance.newInstance(ConditionExpression.class);
+                conditionExpression.setTextContent(flow.getCondition());
+
+                sequenceFlow.setConditionExpression(conditionExpression);
+
+                process.addChildElement(sequenceFlow);
+
+                if (flow.getHead() instanceof MyGateway) {
+                    int numberOfOutgoings = 0;
+                    for (MyFlow flow2 : flows) {
+                        if (flow2.getHead().getSentenceID() == flow.getHead().getSentenceID() && flow2.getHead().getTokenID() == flow.getHead().getTokenID()) {
+                            numberOfOutgoings++;
+                        }
+                    }
+                    if (numberOfOutgoings < 2) {
+                        EndEvent endEvent = modelInstance.newInstance(EndEvent.class);
+                        endEvent.setId("endEvent-" + headID);
+                        endEvent.setName("endEvent-" + headID);
+                        process.addChildElement(endEvent);
+
+                        SequenceFlow sequenceFlow2 = modelInstance.newInstance(SequenceFlow.class);
+                        process.addChildElement(sequenceFlow2);
+                        sourceElement = (FlowNode) modelInstance.getModelElementById(headID);
+                        targetElement = (FlowNode) modelInstance.getModelElementById("endEvent-" + headID);
+                        connect(sequenceFlow2, sourceElement, targetElement);
+                        //sequenceFlow2.setSource(modelInstance.getModelElementById(headID));
+                        //sequenceFlow2.setTarget(modelInstance.getModelElementById("endEvent-" + headID));
+                    }
+                }
+            }
         }
     }
 
@@ -982,11 +1650,35 @@ public class newUmwandlung {
 
                     StartEvent startEvent = modelInstance.newInstance(StartEvent.class);
                     startEvent.setId(firstActivityID + "start");
+                    startEvent.setName(firstActivityID + "start");
                     process.addChildElement(startEvent);
 
                     SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
                     sequenceFlow.setSource(modelInstance.getModelElementById(firstActivityID + "start"));
                     sequenceFlow.setTarget(modelInstance.getModelElementById(firstActivityID));
+                    process.addChildElement(sequenceFlow);
+
+                    break;
+                }
+            }
+        }
+
+        for (MyGateway gateway : gateways) {
+            for (MyFlow flow : flows) {
+                if (gateway.equals(flow.getTail())) {
+                    break;
+                }
+                if (flow.equals(flows.getLast())) {
+                    String firstGatewayID = "ID-" + gateway.getSentenceID() + "-" + gateway.getTokenID();
+
+                    StartEvent startEvent = modelInstance.newInstance(StartEvent.class);
+                    startEvent.setId(firstGatewayID + "start");
+                    startEvent.setName(firstGatewayID + "start");
+                    process.addChildElement(startEvent);
+
+                    SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
+                    sequenceFlow.setSource(modelInstance.getModelElementById(firstGatewayID + "start"));
+                    sequenceFlow.setTarget(modelInstance.getModelElementById(firstGatewayID));
                     process.addChildElement(sequenceFlow);
 
                     break;
@@ -1008,11 +1700,35 @@ public class newUmwandlung {
 
                     EndEvent endEvent = modelInstance.newInstance(EndEvent.class);
                     endEvent.setId("endEvent-" + lastActivityID);
+                    endEvent.setName("endEvent-" + lastActivityID);
                     process.addChildElement(endEvent);
     
                     SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
                     sequenceFlow.setSource(modelInstance.getModelElementById(lastActivityID));
                     sequenceFlow.setTarget(modelInstance.getModelElementById("endEvent-" + lastActivityID));
+                    process.addChildElement(sequenceFlow);
+
+                    break;
+                }
+            }
+        }
+
+        for (MyGateway gateway : gateways) {
+            for (MyFlow flow : flows) {
+                if (gateway.equals(flow.getHead())) {
+                    break;
+                }
+                if (flow.equals(flows.getLast())) {
+                    String lastGatewayID = "ID-" + gateway.getSentenceID() + "-" + gateway.getTokenID();
+
+                    EndEvent endEvent = modelInstance.newInstance(EndEvent.class);
+                    endEvent.setId("endEvent-" + lastGatewayID);
+                    endEvent.setName("endEvent-" + lastGatewayID);
+                    process.addChildElement(endEvent);
+    
+                    SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
+                    sequenceFlow.setSource(modelInstance.getModelElementById(lastGatewayID));
+                    sequenceFlow.setTarget(modelInstance.getModelElementById("endEvent-" + lastGatewayID));
                     process.addChildElement(sequenceFlow);
 
                     break;
