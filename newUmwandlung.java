@@ -1,3 +1,5 @@
+//javac -cp .;lib\* newUmwandlung.java
+//java -cp .;lib\* newUmwandlung jsonFiles/doc-5_1.json
 import org.camunda.bpm.model.bpmn.Bpmn;
 import org.camunda.bpm.model.bpmn.BpmnModelInstance;
 import org.camunda.bpm.model.bpmn.GatewayDirection;
@@ -956,7 +958,7 @@ public class newUmwandlung {
 
         try {
             Bpmn.validateModel(modelInstance);
-            File file = new File("doc-5_1.bpmn.xml");
+            File file = new File("ergebnis.bpmn.xml");
             file.createNewFile();
     
             String bpmnString = Bpmn.convertToString(modelInstance);
@@ -1393,9 +1395,12 @@ public class newUmwandlung {
                 process.addChildElement(messageEndEvent);
 
                 SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
-                sequenceFlow.setSource(sendTask);
-                sequenceFlow.setTarget(messageEndEvent);
+                FlowNode sourceElement = (FlowNode) sendTask;
+                FlowNode targetElement = (FlowNode) messageEndEvent;
+                sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
                 process.addChildElement(sequenceFlow);
+                connect(sequenceFlow, sourceElement, targetElement);
 
                 for (MyDataObject data : activity.getUsedDataObjects()) {
                     String dataObjectReferenceId = data.getLabel() + "-Reference";
@@ -1440,9 +1445,12 @@ public class newUmwandlung {
                 process.addChildElement(messageEndEvent);
 
                 SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
-                sequenceFlow.setSource(sendTask);
-                sequenceFlow.setTarget(messageEndEvent);
+                FlowNode sourceElement = (FlowNode) sendTask;
+                FlowNode targetElement = (FlowNode) messageEndEvent;
+                sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
                 process.addChildElement(sequenceFlow);
+                connect(sequenceFlow, sourceElement, targetElement);
 
                 for (MyDataObject data : activity.getUsedDataObjects()) {
                     String dataObjectReferenceId = data.getLabel() + "-Reference";
@@ -1496,12 +1504,14 @@ public class newUmwandlung {
         if (mygateway.getType().equals("xor")) {
             ExclusiveGateway gateway = modelInstance.newInstance(ExclusiveGateway.class);
             gateway.setId("ID-" + mygateway.getSentenceID() + "-" + mygateway.getTokenID());
+            gateway.setName("ID-" + mygateway.getSentenceID() + "-" + mygateway.getTokenID());
             process.addChildElement(gateway);
         }
 
         if (mygateway.getType().equals("and")) {
             ParallelGateway gateway = modelInstance.newInstance(ParallelGateway.class);
             gateway.setId("ID-" + mygateway.getSentenceID() + "-" + mygateway.getTokenID());
+            gateway.setName("ID-" + mygateway.getSentenceID() + "-" + mygateway.getTokenID());
             process.addChildElement(gateway);
         }
     }
@@ -1520,14 +1530,12 @@ public class newUmwandlung {
                 process.addChildElement(endEvent);
 
                 SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
-                process.addChildElement(sequenceFlow);
                 FlowNode sourceElement = (FlowNode) modelInstance.getModelElementById(headID);
                 FlowNode targetElement = (FlowNode) modelInstance.getModelElementById("endEvent-" + tailID);
+                sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                process.addChildElement(sequenceFlow);
                 connect(sequenceFlow, sourceElement, targetElement);
-                /*sequenceFlow.setSource(modelInstance.getModelElementById(headID));
-                sequenceFlow.setTarget(modelInstance.getModelElementById("endEvent-" + tailID));*/
-
-
             }
 
             if (!(flow.getCondition() == null)) {
@@ -1540,12 +1548,12 @@ public class newUmwandlung {
                 process.addChildElement(endEvent);
 
                 SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
-                process.addChildElement(sequenceFlow);
                 FlowNode sourceElement = (FlowNode) modelInstance.getModelElementById(headID);
                 FlowNode targetElement = (FlowNode) modelInstance.getModelElementById("endEvent-" + tailID);
+                sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                process.addChildElement(sequenceFlow);
                 connect(sequenceFlow, sourceElement, targetElement);
-                //sequenceFlow.setSource(modelInstance.getModelElementById(headID));
-                //sequenceFlow.setTarget(modelInstance.getModelElementById("endEvent-" + tailID));
 
                 ConditionExpression conditionExpression = modelInstance.newInstance(ConditionExpression.class);
                 conditionExpression.setTextContent(flow.getCondition());
@@ -1561,12 +1569,12 @@ public class newUmwandlung {
                 String tailID = "ID-" + flow.getTail().getSentenceID() + "-" + flow.getTail().getTokenID();
 
                 SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
-                process.addChildElement(sequenceFlow);
                 FlowNode sourceElement = (FlowNode) modelInstance.getModelElementById(headID);
                 FlowNode targetElement = (FlowNode) modelInstance.getModelElementById(tailID);
+                sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                process.addChildElement(sequenceFlow);
                 connect(sequenceFlow, sourceElement, targetElement);
-                //sequenceFlow.setSource(modelInstance.getModelElementById(headID));
-                //sequenceFlow.setTarget(modelInstance.getModelElementById(tailID));
 
                 if (flow.getHead() instanceof MyGateway) {
                     int numberOfOutgoings = 0;
@@ -1582,12 +1590,12 @@ public class newUmwandlung {
                         process.addChildElement(endEvent);
 
                         SequenceFlow sequenceFlow2 = modelInstance.newInstance(SequenceFlow.class);
-                        process.addChildElement(sequenceFlow2);
                         sourceElement = (FlowNode) modelInstance.getModelElementById(headID);
                         targetElement = (FlowNode) modelInstance.getModelElementById("endEvent-" + tailID);
+                        sequenceFlow2.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                        sequenceFlow2.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                        process.addChildElement(sequenceFlow2);
                         connect(sequenceFlow2, sourceElement, targetElement);
-                        //sequenceFlow2.setSource(modelInstance.getModelElementById(headID));
-                        //sequenceFlow2.setTarget(modelInstance.getModelElementById("endEvent-" + tailID));
                     }
                 }
             }
@@ -1597,12 +1605,12 @@ public class newUmwandlung {
                 String tailID = "ID-" + flow.getTail().getSentenceID() + "-" + flow.getTail().getTokenID();
 
                 SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
-                process.addChildElement(sequenceFlow);
                 FlowNode sourceElement = (FlowNode) modelInstance.getModelElementById(headID);
                 FlowNode targetElement = (FlowNode) modelInstance.getModelElementById(tailID);
+                sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                process.addChildElement(sequenceFlow);
                 connect(sequenceFlow, sourceElement, targetElement);
-                //sequenceFlow.setSource(modelInstance.getModelElementById(headID));
-                //sequenceFlow.setTarget(modelInstance.getModelElementById(tailID));
 
                 ConditionExpression conditionExpression = modelInstance.newInstance(ConditionExpression.class);
                 conditionExpression.setTextContent(flow.getCondition());
@@ -1625,12 +1633,12 @@ public class newUmwandlung {
                         process.addChildElement(endEvent);
 
                         SequenceFlow sequenceFlow2 = modelInstance.newInstance(SequenceFlow.class);
-                        process.addChildElement(sequenceFlow2);
                         sourceElement = (FlowNode) modelInstance.getModelElementById(headID);
                         targetElement = (FlowNode) modelInstance.getModelElementById("endEvent-" + headID);
+                        sequenceFlow2.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                        sequenceFlow2.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                        process.addChildElement(sequenceFlow2);
                         connect(sequenceFlow2, sourceElement, targetElement);
-                        //sequenceFlow2.setSource(modelInstance.getModelElementById(headID));
-                        //sequenceFlow2.setTarget(modelInstance.getModelElementById("endEvent-" + headID));
                     }
                 }
             }
@@ -1654,9 +1662,12 @@ public class newUmwandlung {
                     process.addChildElement(startEvent);
 
                     SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
-                    sequenceFlow.setSource(modelInstance.getModelElementById(firstActivityID + "start"));
-                    sequenceFlow.setTarget(modelInstance.getModelElementById(firstActivityID));
+                    FlowNode sourceElement = (FlowNode) modelInstance.getModelElementById(firstActivityID + "start");
+                    FlowNode targetElement = (FlowNode) modelInstance.getModelElementById(firstActivityID);
+                    sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                    sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
                     process.addChildElement(sequenceFlow);
+                    connect(sequenceFlow, sourceElement, targetElement);
 
                     break;
                 }
@@ -1677,9 +1688,12 @@ public class newUmwandlung {
                     process.addChildElement(startEvent);
 
                     SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
-                    sequenceFlow.setSource(modelInstance.getModelElementById(firstGatewayID + "start"));
-                    sequenceFlow.setTarget(modelInstance.getModelElementById(firstGatewayID));
+                    FlowNode sourceElement = (FlowNode) modelInstance.getModelElementById(firstGatewayID + "start");
+                    FlowNode targetElement = (FlowNode) modelInstance.getModelElementById(firstGatewayID);
+                    sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                    sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
                     process.addChildElement(sequenceFlow);
+                    connect(sequenceFlow, sourceElement, targetElement);
 
                     break;
                 }
@@ -1704,9 +1718,13 @@ public class newUmwandlung {
                     process.addChildElement(endEvent);
     
                     SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
-                    sequenceFlow.setSource(modelInstance.getModelElementById(lastActivityID));
-                    sequenceFlow.setTarget(modelInstance.getModelElementById("endEvent-" + lastActivityID));
+                    FlowNode sourceElement = (FlowNode) modelInstance.getModelElementById(lastActivityID);
+                    FlowNode targetElement = (FlowNode) modelInstance.getModelElementById("endEvent-" + lastActivityID);
+                    sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                    sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
                     process.addChildElement(sequenceFlow);
+                    connect(sequenceFlow, sourceElement, targetElement);
+                    
 
                     break;
                 }
@@ -1727,9 +1745,12 @@ public class newUmwandlung {
                     process.addChildElement(endEvent);
     
                     SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
-                    sequenceFlow.setSource(modelInstance.getModelElementById(lastGatewayID));
-                    sequenceFlow.setTarget(modelInstance.getModelElementById("endEvent-" + lastGatewayID));
+                    FlowNode sourceElement = (FlowNode) modelInstance.getModelElementById(lastGatewayID);
+                    FlowNode targetElement = (FlowNode) modelInstance.getModelElementById("endEvent-" + lastGatewayID);
+                    sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                    sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
                     process.addChildElement(sequenceFlow);
+                    connect(sequenceFlow, sourceElement, targetElement);
 
                     break;
                 }
