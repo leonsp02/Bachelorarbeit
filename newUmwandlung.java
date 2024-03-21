@@ -1,5 +1,3 @@
-//javac -cp .;lib\* newUmwandlung.java
-//java -cp .;lib\* newUmwandlung jsonFiles/doc-5_1.json
 import org.camunda.bpm.model.bpmn.Bpmn;
 import org.camunda.bpm.model.bpmn.BpmnModelInstance;
 import org.camunda.bpm.model.bpmn.GatewayDirection;
