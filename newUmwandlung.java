@@ -83,6 +83,7 @@ class MyActivity extends MyFlowNode {
     private MyActor recipient;
     private List<MyDataObject> usedDataObjects;
     private String furtherSpecification;
+    private List<MyActor> furtherPerformers;
 
     // Konstruktor
     public MyActivity(Integer sentenceID, Integer tokenID, String label, MyActor performer) {
@@ -91,6 +92,7 @@ class MyActivity extends MyFlowNode {
         this.performer = performer;
         this.usedDataObjects = new ArrayList<>();
         this.furtherSpecification = null;
+        this.furtherPerformers = new ArrayList<>();
     }
 
     // Konstruktor
@@ -99,6 +101,7 @@ class MyActivity extends MyFlowNode {
         this.label = label;
         this.usedDataObjects = new ArrayList<>();
         this.furtherSpecification = null;
+        this.furtherPerformers = new ArrayList<>();
     }
 
     // Getter-Methoden
@@ -122,6 +125,10 @@ class MyActivity extends MyFlowNode {
         return usedDataObjects;
     }
 
+    public List<MyActor> getFurtherPerformers() {
+        return furtherPerformers;
+    }
+
     public MyActor getRecipient() {
         return recipient;
     }
@@ -140,6 +147,10 @@ class MyActivity extends MyFlowNode {
 
     public void addUsedDataObject(MyDataObject dataObject) {
         usedDataObjects.add(dataObject);
+    }
+
+    public void addFurtherPerformers(MyActor actor) {
+        furtherPerformers.add(actor);
     }
 }
 
@@ -365,9 +376,15 @@ public class newUmwandlung {
                             String activityLabel = activityLabeling(ner_tagsNode, tokensNode, position);
                             MyActor performer = getActorByName(actorLabel);
 
-                            MyActivity activity = new MyActivity(activitySentenceID, activityTokenID, activityLabel, performer);
-                            activities.add(activity);
-
+                            if (getActivityBySIDANDTID(activitySentenceID, activityTokenID) == null) {
+                                MyActivity activity = new MyActivity(activitySentenceID, activityTokenID, activityLabel, performer);
+                                activities.add(activity);
+                                break;
+                            }
+                            if (getActivityBySIDANDTID(activitySentenceID, activityTokenID) != null) {
+                                MyActivity activity = getActivityBySIDANDTID(activitySentenceID, activityTokenID);
+                                activity.addFurtherPerformers(performer);
+                            }
                             break;
                         }
                         position++;
@@ -1023,9 +1040,32 @@ public class newUmwandlung {
         }
         actorLabel = String.join("_", cleanedTokens);
 
+        actorLabel = cleanLabel(actorLabel);
+
+        actorLabel = actorLabel.substring(0, 1).toUpperCase() + actorLabel.substring(1);
+
         return actorLabel;
     }
 
+
+
+    private static String cleanLabel(String label) {
+        StringBuilder cleanedLabel = new StringBuilder();
+        boolean isFirstChar = true;
+    
+        for (char c : label.toCharArray()) {
+            if (Character.isLetter(c) || c == '_' || c == '-') {
+                cleanedLabel.append(c);
+            } else if (Character.isDigit(c)) {
+                if (!isFirstChar) {
+                    cleanedLabel.append(c);
+                }
+            }
+            isFirstChar = false;
+        }
+        return cleanedLabel.toString();
+    }
+        
 
 
 
@@ -1109,7 +1149,10 @@ public class newUmwandlung {
         String[] words = activityLabel.split("\\s+");
         activityLabel = String.join("_", words);
 
+        activityLabel = cleanLabel(activityLabel);
+
         return activityLabel; 
+        
     }
 
 
@@ -1153,6 +1196,8 @@ public class newUmwandlung {
         }
         dataObjectLabel = String.join("_", cleanedTokens);
 
+        dataObjectLabel = cleanLabel(dataObjectLabel);
+
         return dataObjectLabel;
     }
 
@@ -1189,6 +1234,8 @@ public class newUmwandlung {
         furtherSpecificationLabel = lemmatizedSentence.toString().trim();
         String[] words = furtherSpecificationLabel.split("\\s+");
         furtherSpecificationLabel = String.join("_", words);
+
+        furtherSpecificationLabel = cleanLabel(furtherSpecificationLabel);
 
         return furtherSpecificationLabel;
     }
@@ -1228,6 +1275,24 @@ public class newUmwandlung {
             }
         }
         return null;
+    }
+
+
+
+    private static String fullLabel(MyActivity activity) {
+        String label = activity.getLabel();
+
+        int i = 0;
+        for (MyDataObject dataObject : activity.getUsedDataObjects()) {
+            if (i == 0) {
+                label = label + "_" + dataObject.getLabel();
+            }
+            if (i != 0) {
+                label = label + "_and_" + dataObject.getLabel();
+            }
+            i++;
+        }
+        return label;
     }
     
 
@@ -1282,6 +1347,8 @@ public class newUmwandlung {
         }
         conditionLabel = String.join("_", cleanedTokens);
 
+        conditionLabel = cleanLabel(conditionLabel);
+
         return conditionLabel;
     }
 
@@ -1313,7 +1380,7 @@ public class newUmwandlung {
                 }
                 ServiceTask serviceTask = modelInstance.newInstance(ServiceTask.class);
                 serviceTask.setId("ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
-                serviceTask.setName(activity.getLabel());
+                serviceTask.setName(fullLabel(activity));
                 process.addChildElement(serviceTask);
 
                 for (MyDataObject data : activity.getUsedDataObjects()) {
@@ -1339,7 +1406,7 @@ public class newUmwandlung {
             if (activity.getPerformer() != null) {
                 UserTask userTask = modelInstance.newInstance(UserTask.class);
                 userTask.setId("ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
-                userTask.setName(activity.getLabel());
+                userTask.setName(fullLabel(activity));
                 process.addChildElement(userTask);
 
                 for (MyDataObject data : activity.getUsedDataObjects()) {
@@ -1349,6 +1416,16 @@ public class newUmwandlung {
                     DataInputAssociation association = modelInstance.newInstance(DataInputAssociation.class);
                     association.setTarget(dataObjectReference);
                     userTask.addChildElement(association);
+                }
+
+                for (MyActor actor : activity.getFurtherPerformers()) {
+                    CamundaProperties camundaProperties = modelInstance.newInstance(CamundaProperties.class);
+                    userTask.builder().addExtensionElement(camundaProperties);
+
+                    CamundaProperty property = modelInstance.newInstance(CamundaProperty.class);
+                    property.setCamundaName("Kommentar");
+                    property.setCamundaValue("Further-Actor_" + actor.getName());
+                    userTask.builder().addExtensionElement(property);
                 }
 
                 if (activity.getFurtherSpecification() != null) {
@@ -1373,7 +1450,7 @@ public class newUmwandlung {
                 }
                 SendTask sendTask = modelInstance.newInstance(SendTask.class);
                 sendTask.setId("ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
-                sendTask.setName(activity.getLabel());
+                sendTask.setName(fullLabel(activity));
                 process.addChildElement(sendTask);
 
                 Message message = modelInstance.newInstance(Message.class);
@@ -1423,7 +1500,7 @@ public class newUmwandlung {
             if (activity.getPerformer() != null) {
                 SendTask sendTask = modelInstance.newInstance(SendTask.class);
                 sendTask.setId("ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
-                sendTask.setName(activity.getLabel());
+                sendTask.setName(fullLabel(activity));
                 process.addChildElement(sendTask);
 
                 Message message = modelInstance.newInstance(Message.class);
@@ -1449,6 +1526,16 @@ public class newUmwandlung {
                 sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
                 process.addChildElement(sequenceFlow);
                 connect(sequenceFlow, sourceElement, targetElement);
+
+                for (MyActor actor : activity.getFurtherPerformers()) {
+                    CamundaProperties camundaProperties = modelInstance.newInstance(CamundaProperties.class);
+                    sendTask.builder().addExtensionElement(camundaProperties);
+
+                    CamundaProperty property = modelInstance.newInstance(CamundaProperty.class);
+                    property.setCamundaName("Kommentar");
+                    property.setCamundaValue("Further-Actor_" + actor.getName());
+                    sendTask.builder().addExtensionElement(property);
+                }
 
                 for (MyDataObject data : activity.getUsedDataObjects()) {
                     String dataObjectReferenceId = data.getLabel() + "-Reference";
