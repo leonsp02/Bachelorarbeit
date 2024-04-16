@@ -38,6 +38,7 @@ import org.camunda.bpm.model.bpmn.instance.SendTask;
 import org.camunda.bpm.model.bpmn.instance.Message;
 import org.camunda.bpm.model.bpmn.instance.MessageFlow;
 import org.camunda.bpm.model.bpmn.instance.MessageEventDefinition;
+import org.camunda.bpm.model.bpmn.instance.*;
 
 
 import edu.stanford.nlp.simple.*;
@@ -912,11 +913,6 @@ public class newUmwandlung {
             }
 
 
-
-
-
-
-
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -936,36 +932,35 @@ public class newUmwandlung {
         definitions.setTargetNamespace("https://camunda.org/examples");
         modelInstance.setDefinitions(definitions);
 
-        Process process = modelInstance.newInstance(Process.class);
-        process.setId("process");
-        definitions.addChildElement(process);
-
-        LaneSet laneSet = modelInstance.newInstance(LaneSet.class);
-        process.addChildElement(laneSet);
+        Collaboration collaboration = modelInstance.newInstance(Collaboration.class);
+        collaboration.setId("collaboration");
+        modelInstance.getDefinitions().addChildElement(collaboration);
 
         for (MyActor actor : actors) {
-            actorGenerating(actor, modelInstance, laneSet);
+            actorGenerating(actor, modelInstance, collaboration);
         }
 
         for (MyDataObject dataObject : dataObjects) {
-            dataObjectGenerating(dataObject, modelInstance, process);
+            dataObjectGenerating(dataObject, modelInstance);
         }
 
         for (MyActivity activity : activities) {
-            activityGenerating(activity, modelInstance, process, laneSet);
+            activityGenerating(activity, modelInstance, collaboration);
         }
 
         for (MyGateway gateway : gateways) {
-            gatewayGenerating(gateway, modelInstance, process);
+            gatewayGenerating(gateway, modelInstance);
         }
 
         for (MyFlow flow : flows) {
-            flowGenerating(flow, modelInstance, process, flows);
+            flowGenerating(flow, modelInstance, flows, collaboration);
         }
 
-        startEventGenerating(modelInstance, process);
+        startEventGenerating(modelInstance);
 
-        endEventGenerating(modelInstance, process);
+        endEventGenerating(modelInstance);
+
+        connectProcessParts(modelInstance);
 
         
 
@@ -973,7 +968,7 @@ public class newUmwandlung {
 
         try {
             Bpmn.validateModel(modelInstance);
-            File file = new File("ergebnis.bpmn.xml");
+            File file = new File("ergebnis.bpmn");
             file.createNewFile();
     
             String bpmnString = Bpmn.convertToString(modelInstance);
@@ -998,6 +993,10 @@ public class newUmwandlung {
         to.getIncoming().add(flow);
     }
 
+    private static void messageConnect(MessageFlow flow, InteractionNode from, InteractionNode to) {
+        flow.setSource(from);
+        flow.setTarget(to);
+    }
 
 
     private static String actorLabeling(JsonNode ner_tagsNode, JsonNode tokensNode, int position) {
@@ -1297,11 +1296,37 @@ public class newUmwandlung {
     
 
 
-    private static void actorGenerating(MyActor actor, BpmnModelInstance modelInstance, LaneSet laneSet) {
-        Lane lane = modelInstance.newInstance(Lane.class);
-        lane.setId(actor.getName());
-        lane.setName(actor.getName());
-        laneSet.addChildElement(lane);
+    private static void actorGenerating(MyActor actor, BpmnModelInstance modelInstance, Collaboration collaboration) {
+        Process process = modelInstance.newInstance(Process.class);
+        process.setId(actor.getName() + "-Process");
+        process.setExecutable(true);
+        modelInstance.getDefinitions().addChildElement(process);
+
+        Participant participant = modelInstance.newInstance(Participant.class);
+        participant.setId(actor.getName());
+        participant.setName(actor.getName());
+        participant.setProcess(process);
+        collaboration.addChildElement(participant);
+
+        for (MyActivity activity : activities) {
+            if (activity.getPerformer() == null) {
+                boolean participantExist = participantExists("SystemLane", collaboration);
+                if (!participantExist) {
+                    Process systemProcess = modelInstance.newInstance(Process.class);
+                    systemProcess.setId("SystemLane-Process");
+                    systemProcess.setExecutable(true);
+                    modelInstance.getDefinitions().addChildElement(systemProcess);
+
+                    participant = modelInstance.newInstance(Participant.class);
+                    participant.setId("SystemLane");
+                    participant.setName("SystemLane");
+                    participant.setProcess(systemProcess);
+                    collaboration.addChildElement(participant);
+
+                    return;
+                }
+            }
+        }
     }
 
 
@@ -1354,216 +1379,241 @@ public class newUmwandlung {
 
 
 
-    private static void dataObjectGenerating(MyDataObject myDataObject, BpmnModelInstance modelInstance, Process process) {
-        DataObject dataObject = modelInstance.newInstance(DataObject.class);
-        dataObject.setId(myDataObject.getLabel());
-        dataObject.setName(myDataObject.getLabel());
-        process.addChildElement(dataObject);
+    private static Process findProcessWithActivity(BpmnModelInstance modelInstance, MyActivity activity) {
+        if (activity.getPerformer() == null) {
+            String processID = "SystemLane-Process";
+            for (Process process : modelInstance.getModelElementsByType(Process.class)) {
+                if (process.getId().equals(processID)) {
+                    return process;
+                }
+            }
+        }
 
-        DataObjectReference dataObjectReference = modelInstance.newInstance(DataObjectReference.class);
-        dataObjectReference.setDataObject(dataObject);
-        dataObjectReference.setId(myDataObject.getLabel() + "-Reference");
-        process.addChildElement(dataObjectReference);
+        String processID = activity.getPerformer().getName() + "-Process";
+        for (Process process : modelInstance.getModelElementsByType(Process.class)) {
+            if (process.getId().equals(processID)) {
+                return process;
+            }
+        }
+        return null;
     }
 
 
 
-    private static void activityGenerating(MyActivity activity, BpmnModelInstance modelInstance, Process process, LaneSet laneSet) {
+    private static void dataObjectGenerating(MyDataObject myDataObject, BpmnModelInstance modelInstance) {
+        for (MyActivity activity : activities) {
+            for (MyDataObject dataObjectFinder : activity.getUsedDataObjects()) {
+                if (dataObjectFinder.getLabel() == myDataObject.getLabel()) {
+                    Process process = findProcessWithActivity(modelInstance, activity);
+
+                    DataObject dataObject = modelInstance.newInstance(DataObject.class);
+                    dataObject.setId(myDataObject.getLabel());
+                    dataObject.setName(myDataObject.getLabel());
+                    process.addChildElement(dataObject);
+
+                    DataObjectReference dataObjectReference = modelInstance.newInstance(DataObjectReference.class);
+                    dataObjectReference.setDataObject(dataObject);
+                    dataObjectReference.setId(myDataObject.getLabel() + "-Reference");
+                    process.addChildElement(dataObjectReference);
+
+                    return;
+                }
+            }
+        }  
+    }
+
+
+
+    private static void activityGenerating(MyActivity activity, BpmnModelInstance modelInstance, Collaboration collaboration) {
         if (activity.getRecipient() == null) {
             if (activity.getPerformer() == null) {
-                boolean laneExist = laneExisting("SystemLane", laneSet);
-                if (!laneExist) {
-                    Lane lane = modelInstance.newInstance(Lane.class);
-                    lane.setId("SystemLane");
-                    lane.setName("SystemLane");
-                    laneSet.addChildElement(lane);
-                }
-                ServiceTask serviceTask = modelInstance.newInstance(ServiceTask.class);
-                serviceTask.setId("ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
-                serviceTask.setName(fullLabel(activity));
-                process.addChildElement(serviceTask);
+                Process process = findProcessWithActivity(modelInstance, activity);
+
+                Task task = modelInstance.newInstance(Task.class);
+                task.setId("ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
+                task.setName(fullLabel(activity));
+                process.addChildElement(task);
 
                 for (MyDataObject data : activity.getUsedDataObjects()) {
                     String dataObjectReferenceId = data.getLabel() + "-Reference";
                     DataObjectReference dataObjectReference = getDataObjectReferenceById(modelInstance, dataObjectReferenceId);
                     
-                    DataInputAssociation association = modelInstance.newInstance(DataInputAssociation.class);
+                    DataOutputAssociation association = modelInstance.newInstance(DataOutputAssociation.class);
                     association.setTarget(dataObjectReference);
-                    serviceTask.addChildElement(association);
+                    task.addChildElement(association);
                 }
 
                 if (activity.getFurtherSpecification() != null) {
                     CamundaProperties camundaProperties = modelInstance.newInstance(CamundaProperties.class);
-                    serviceTask.builder().addExtensionElement(camundaProperties);
+                    task.builder().addExtensionElement(camundaProperties);
 
                     CamundaProperty property = modelInstance.newInstance(CamundaProperty.class);
                     property.setCamundaName("Kommentar");
                     property.setCamundaValue(activity.getFurtherSpecification());
-                    serviceTask.builder().addExtensionElement(property);
+                    task.builder().addExtensionElement(property);
                 }
             }
 
             if (activity.getPerformer() != null) {
-                UserTask userTask = modelInstance.newInstance(UserTask.class);
-                userTask.setId("ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
-                userTask.setName(fullLabel(activity));
-                process.addChildElement(userTask);
+                Process process = findProcessWithActivity(modelInstance, activity);
+
+                Task task = modelInstance.newInstance(Task.class);
+                task.setId("ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
+                task.setName(fullLabel(activity));
+                process.addChildElement(task);
 
                 for (MyDataObject data : activity.getUsedDataObjects()) {
                     String dataObjectReferenceId = data.getLabel() + "-Reference";
                     DataObjectReference dataObjectReference = getDataObjectReferenceById(modelInstance, dataObjectReferenceId);
                     
-                    DataInputAssociation association = modelInstance.newInstance(DataInputAssociation.class);
+                    DataOutputAssociation association = modelInstance.newInstance(DataOutputAssociation.class);
                     association.setTarget(dataObjectReference);
-                    userTask.addChildElement(association);
+                    task.addChildElement(association);
                 }
 
                 for (MyActor actor : activity.getFurtherPerformers()) {
                     CamundaProperties camundaProperties = modelInstance.newInstance(CamundaProperties.class);
-                    userTask.builder().addExtensionElement(camundaProperties);
+                    task.builder().addExtensionElement(camundaProperties);
 
                     CamundaProperty property = modelInstance.newInstance(CamundaProperty.class);
                     property.setCamundaName("Kommentar");
                     property.setCamundaValue("Further-Actor_" + actor.getName());
-                    userTask.builder().addExtensionElement(property);
+                    task.builder().addExtensionElement(property);
                 }
 
                 if (activity.getFurtherSpecification() != null) {
                     CamundaProperties camundaProperties = modelInstance.newInstance(CamundaProperties.class);
-                    userTask.builder().addExtensionElement(camundaProperties);
+                    task.builder().addExtensionElement(camundaProperties);
 
                     CamundaProperty property = modelInstance.newInstance(CamundaProperty.class);
                     property.setCamundaName("Kommentar");
                     property.setCamundaValue(activity.getFurtherSpecification());
-                    userTask.builder().addExtensionElement(property);
+                    task.builder().addExtensionElement(property);
                 }
             }
         }
         else {
             if (activity.getPerformer() == null) {
-                boolean laneExist = laneExisting("SystemLane", laneSet);
-                if (!laneExist) {
-                    Lane lane = modelInstance.newInstance(Lane.class);
-                    lane.setId("SystemLane");
-                    lane.setName("SystemLane");
-                    laneSet.addChildElement(lane);
+                Process process = findProcessWithActivity(modelInstance, activity);
+
+                Task sourceTask = modelInstance.newInstance(Task.class);
+                sourceTask.setId("ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
+                sourceTask.setName(fullLabel(activity));
+                process.addChildElement(sourceTask);
+
+                Process recipientProcess = null;
+                String processID = activity.getRecipient().getName() + "-Process";
+                for (Process foundProcess : modelInstance.getModelElementsByType(Process.class)) {
+                    if (foundProcess.getId().equals(processID)) {
+                        recipientProcess = foundProcess;
+                        break;
+                    }
                 }
-                SendTask sendTask = modelInstance.newInstance(SendTask.class);
-                sendTask.setId("ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
-                sendTask.setName(fullLabel(activity));
-                process.addChildElement(sendTask);
+                boolean samePerformerRecipient = nextElementOfActivitySamePerformerRecipient(modelInstance, activity);
 
-                Message message = modelInstance.newInstance(Message.class);
-                message.setName("message");
-                message.setId("message-ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
+                if (!samePerformerRecipient) {
+                    Task targetTask = modelInstance.newInstance(Task.class);
+                    targetTask.setName("reveice");
+                    recipientProcess.addChildElement(targetTask);
 
-                Definitions definitions = modelInstance.getDefinitions();
-                definitions.addChildElement(message);
-
-                MessageEventDefinition messageEventDefinition = modelInstance.newInstance(MessageEventDefinition.class);
-                messageEventDefinition.setMessage(message);
-
-                EndEvent messageEndEvent = modelInstance.newInstance(EndEvent.class);
-                messageEndEvent.setId("endEvent-message-ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
-                messageEndEvent.setName("endEvent-message-ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
-                messageEndEvent.getEventDefinitions().add(messageEventDefinition);
-                process.addChildElement(messageEndEvent);
-
-                SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
-                FlowNode sourceElement = (FlowNode) sendTask;
-                FlowNode targetElement = (FlowNode) messageEndEvent;
-                sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
-                sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
-                process.addChildElement(sequenceFlow);
-                connect(sequenceFlow, sourceElement, targetElement);
+                    MessageFlow messageFlow = modelInstance.newInstance(MessageFlow.class);
+                    InteractionNode sourceElement = (InteractionNode) sourceTask;
+                    InteractionNode targetElement = (InteractionNode) targetTask;
+                    messageFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                    messageFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                    collaboration.addChildElement(messageFlow);
+                    messageConnect(messageFlow, sourceElement, targetElement);
+                }
 
                 for (MyDataObject data : activity.getUsedDataObjects()) {
                     String dataObjectReferenceId = data.getLabel() + "-Reference";
                     DataObjectReference dataObjectReference = getDataObjectReferenceById(modelInstance, dataObjectReferenceId);
                     
-                    DataInputAssociation association = modelInstance.newInstance(DataInputAssociation.class);
+                    DataOutputAssociation association = modelInstance.newInstance(DataOutputAssociation.class);
                     association.setTarget(dataObjectReference);
-                    sendTask.addChildElement(association);
+                    sourceTask.addChildElement(association);
                 }
 
                 if (activity.getFurtherSpecification() != null) {
                     CamundaProperties camundaProperties = modelInstance.newInstance(CamundaProperties.class);
-                    sendTask.builder().addExtensionElement(camundaProperties);
+                    sourceTask.builder().addExtensionElement(camundaProperties);
 
                     CamundaProperty property = modelInstance.newInstance(CamundaProperty.class);
                     property.setCamundaName("Kommentar");
                     property.setCamundaValue(activity.getFurtherSpecification());
-                    sendTask.builder().addExtensionElement(property);
+                    sourceTask.builder().addExtensionElement(property);
                 }
             }
 
             if (activity.getPerformer() != null) {
-                SendTask sendTask = modelInstance.newInstance(SendTask.class);
-                sendTask.setId("ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
-                sendTask.setName(fullLabel(activity));
-                process.addChildElement(sendTask);
+                Process process = findProcessWithActivity(modelInstance, activity);
 
-                Message message = modelInstance.newInstance(Message.class);
-                message.setName("message");
-                message.setId("message-ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
+                Task sourceTask = modelInstance.newInstance(Task.class);
+                sourceTask.setId("ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
+                sourceTask.setName(fullLabel(activity));
+                process.addChildElement(sourceTask);
 
-                Definitions definitions = modelInstance.getDefinitions();
-                definitions.addChildElement(message);
+                Process recipientProcess = null;
+                String processID = activity.getRecipient().getName() + "-Process";
+                for (Process foundProcess : modelInstance.getModelElementsByType(Process.class)) {
+                    if (foundProcess.getId().equals(processID)) {
+                        recipientProcess = foundProcess;
+                        break;
+                    }
+                }
+                boolean samePerformerRecipient = nextElementOfActivitySamePerformerRecipient(modelInstance, activity);
 
-                MessageEventDefinition messageEventDefinition = modelInstance.newInstance(MessageEventDefinition.class);
-                messageEventDefinition.setMessage(message);
+                if (!samePerformerRecipient) {
+                    Task targetTask = modelInstance.newInstance(Task.class);
+                    targetTask.setName("reveice");
+                    recipientProcess.addChildElement(targetTask);
 
-                EndEvent messageEndEvent = modelInstance.newInstance(EndEvent.class);
-                messageEndEvent.setId("endEvent-message-ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
-                messageEndEvent.setName("endEvent-message-ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
-                messageEndEvent.getEventDefinitions().add(messageEventDefinition);
-                process.addChildElement(messageEndEvent);
-
-                SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
-                FlowNode sourceElement = (FlowNode) sendTask;
-                FlowNode targetElement = (FlowNode) messageEndEvent;
-                sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
-                sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
-                process.addChildElement(sequenceFlow);
-                connect(sequenceFlow, sourceElement, targetElement);
+                    MessageFlow messageFlow = modelInstance.newInstance(MessageFlow.class);
+                    InteractionNode sourceElement = (InteractionNode) sourceTask;
+                    InteractionNode targetElement = (InteractionNode) targetTask;
+                    messageFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                    messageFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                    collaboration.addChildElement(messageFlow);
+                    messageConnect(messageFlow, sourceElement, targetElement);
+                }
 
                 for (MyActor actor : activity.getFurtherPerformers()) {
                     CamundaProperties camundaProperties = modelInstance.newInstance(CamundaProperties.class);
-                    sendTask.builder().addExtensionElement(camundaProperties);
+                    sourceTask.builder().addExtensionElement(camundaProperties);
 
                     CamundaProperty property = modelInstance.newInstance(CamundaProperty.class);
                     property.setCamundaName("Kommentar");
                     property.setCamundaValue("Further-Actor_" + actor.getName());
-                    sendTask.builder().addExtensionElement(property);
+                    sourceTask.builder().addExtensionElement(property);
                 }
 
                 for (MyDataObject data : activity.getUsedDataObjects()) {
                     String dataObjectReferenceId = data.getLabel() + "-Reference";
                     DataObjectReference dataObjectReference = getDataObjectReferenceById(modelInstance, dataObjectReferenceId);
                     
-                    DataInputAssociation association = modelInstance.newInstance(DataInputAssociation.class);
+                    DataOutputAssociation association = modelInstance.newInstance(DataOutputAssociation.class);
                     association.setTarget(dataObjectReference);
-                    sendTask.addChildElement(association);
+                    sourceTask.addChildElement(association);
                 }
 
                 if (activity.getFurtherSpecification() != null) {
                     CamundaProperties camundaProperties = modelInstance.newInstance(CamundaProperties.class);
-                    sendTask.builder().addExtensionElement(camundaProperties);
+                    sourceTask.builder().addExtensionElement(camundaProperties);
 
                     CamundaProperty property = modelInstance.newInstance(CamundaProperty.class);
                     property.setCamundaName("Kommentar");
                     property.setCamundaValue(activity.getFurtherSpecification());
-                    sendTask.builder().addExtensionElement(property);
+                    sourceTask.builder().addExtensionElement(property);
                 }
             }
         }
     }
 
 
-    
-    private static boolean laneExisting(String name, LaneSet laneSet) {
-        for (Lane lane : laneSet.getLanes()) {
-            if (lane.getName() != null && lane.getName().equals(name)) {
+
+    public static boolean participantExists(String name, Collaboration collaboration) {
+        for (Participant participant : collaboration.getParticipants()) {
+            if (participant.getName() != null && participant.getName().equals(name)) {
                 return true;
             }
         }
@@ -1586,7 +1636,87 @@ public class newUmwandlung {
 
 
 
-    private static void gatewayGenerating(MyGateway mygateway, BpmnModelInstance modelInstance, Process process) {
+    // Ist das nächste Element nach einer Aktivität in der gleichen Lane wie der Recipient der Ausgangs-Aktivität? 
+    private static boolean nextElementOfActivitySamePerformerRecipient(BpmnModelInstance modelInstance, MyActivity activity) {
+        for (MyFlow flow : flows) {
+            if ((flow.getHead() == activity) && (flow.getTail() instanceof MyGateway)) {
+                return false;
+            }
+            if ((flow.getHead() == activity) && (flow.getTail() instanceof MyActivity)) {
+                MyActivity foundActivity = getActivityBySIDANDTID(flow.getTail().getSentenceID(), flow.getTail().getTokenID());
+                if (foundActivity.getPerformer() == activity.getRecipient()) {
+                    return true;
+                }
+                else {
+                    return false;
+                }
+            }
+        }
+        return false;
+    }
+
+
+
+    private static Process findProcessWithGatewayLeft(BpmnModelInstance modelInstance, MyGateway gateway) {
+        MyGateway foundGateway = null;
+        MyActivity foundActivity = null;
+        Process process = null;
+
+        for (MyFlow flow : flows) {
+            if ((flow.getTail() == gateway) && (flow.getHead() instanceof MyActivity)) {
+                foundActivity = (MyActivity) flow.getHead();
+                process = findProcessWithActivity(modelInstance, foundActivity);
+                return process;
+            }
+
+            if ((flow.getTail() == gateway) && (flow.getHead() instanceof MyGateway)) {
+                foundGateway = (MyGateway) flow.getHead();
+                process = findProcessWithGatewayLeft(modelInstance, foundGateway);
+                if (process == null) {
+                    return null;
+                }else {
+                    return process;
+                }
+            }
+        } 
+        return null;
+    }
+
+
+
+    private static Process findProcessWithGatewayRight(BpmnModelInstance modelInstance, MyGateway gateway) {
+        MyGateway foundGateway = null;
+        MyActivity foundActivity = null;
+        Process process = null;
+
+        for (MyFlow flow : flows) {
+            if ((flow.getHead() == gateway) && (flow.getTail() instanceof MyActivity)) {
+                foundActivity = (MyActivity) flow.getTail();
+                process = findProcessWithActivity(modelInstance, foundActivity);
+                return process;
+            }
+
+            if ((flow.getHead() == gateway) && (flow.getTail() instanceof MyGateway)) {
+                foundGateway = (MyGateway) flow.getTail();
+                process = findProcessWithGatewayLeft(modelInstance, foundGateway);
+                if (process == null) {
+                    return null;
+                }else {
+                    return process;
+                }
+            }
+        }
+        return null;
+    }
+
+
+
+    private static void gatewayGenerating(MyGateway mygateway, BpmnModelInstance modelInstance) {
+        Process process = findProcessWithGatewayLeft(modelInstance, mygateway);
+        if (process == null) {
+            process = findProcessWithGatewayRight(modelInstance, mygateway);
+        }
+
         if (mygateway.getType().equals("xor")) {
             ExclusiveGateway gateway = modelInstance.newInstance(ExclusiveGateway.class);
             gateway.setId("ID-" + mygateway.getSentenceID() + "-" + mygateway.getTokenID());
@@ -1604,20 +1734,34 @@ public class newUmwandlung {
 
 
 
-    private static void flowGenerating(MyFlow flow, BpmnModelInstance modelInstance, Process process, List<MyFlow> flows) {
+    private static Process findProcessByElement(BpmnModelInstance modelInstance, FlowNode element) {
+        for (Process process : modelInstance.getModelElementsByType(Process.class)) {
+            if (element != null && process.getFlowElements().contains(element)) {
+                return process;
+            }
+        }
+        return null;
+    }
+
+
+
+    private static void flowGenerating(MyFlow flow, BpmnModelInstance modelInstance, List<MyFlow> flows, Collaboration collaboration) {
         if (flow.getTail() instanceof MyEndevent) {
             if (flow.getCondition() == null) {
                 String headID = "ID-" + flow.getHead().getSentenceID() + "-" + flow.getHead().getTokenID();
                 String tailID = "ID-" + flow.getTail().getSentenceID() + "-" + flow.getTail().getTokenID();
+
+                FlowNode sourceElement = (FlowNode) modelInstance.getModelElementById(headID);
+                Process process = findProcessByElement(modelInstance, sourceElement);
 
                 EndEvent endEvent = modelInstance.newInstance(EndEvent.class);
                 endEvent.setId("endEvent-" + tailID);
                 endEvent.setName("endEvent-" + tailID);
                 process.addChildElement(endEvent);
 
-                SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
-                FlowNode sourceElement = (FlowNode) modelInstance.getModelElementById(headID);
                 FlowNode targetElement = (FlowNode) modelInstance.getModelElementById("endEvent-" + tailID);
+
+                SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
                 sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
                 sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
                 process.addChildElement(sequenceFlow);
@@ -1628,14 +1772,17 @@ public class newUmwandlung {
                 String headID = "ID-" + flow.getHead().getSentenceID() + "-" + flow.getHead().getTokenID();
                 String tailID = "ID-" + flow.getTail().getSentenceID() + "-" + flow.getTail().getTokenID();
 
+                FlowNode sourceElement = (FlowNode) modelInstance.getModelElementById(headID);
+                Process process = findProcessByElement(modelInstance, sourceElement);
+
                 EndEvent endEvent = modelInstance.newInstance(EndEvent.class);
                 endEvent.setId("endEvent-" + tailID);
                 endEvent.setName("endEvent-" + tailID);
                 process.addChildElement(endEvent);
 
-                SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
-                FlowNode sourceElement = (FlowNode) modelInstance.getModelElementById(headID);
                 FlowNode targetElement = (FlowNode) modelInstance.getModelElementById("endEvent-" + tailID);
+
+                SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
                 sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
                 sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
                 process.addChildElement(sequenceFlow);
@@ -1654,13 +1801,49 @@ public class newUmwandlung {
                 String headID = "ID-" + flow.getHead().getSentenceID() + "-" + flow.getHead().getTokenID();
                 String tailID = "ID-" + flow.getTail().getSentenceID() + "-" + flow.getTail().getTokenID();
 
-                SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
                 FlowNode sourceElement = (FlowNode) modelInstance.getModelElementById(headID);
                 FlowNode targetElement = (FlowNode) modelInstance.getModelElementById(tailID);
-                sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
-                sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
-                process.addChildElement(sequenceFlow);
-                connect(sequenceFlow, sourceElement, targetElement);
+
+                Process processSource = findProcessByElement(modelInstance, sourceElement);
+                Process processTarget = findProcessByElement(modelInstance, targetElement);
+
+                if (processSource == processTarget) {
+                    SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
+                    sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                    sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                    processSource.addChildElement(sequenceFlow);
+                    connect(sequenceFlow, sourceElement, targetElement);
+                }
+                else {
+                    if (flow.getHead() instanceof MyGateway) {
+                        Task task = modelInstance.newInstance(Task.class);
+                        task.setName("continue");
+                        processSource.addChildElement(task);
+
+                        SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
+                        sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + task.getId());
+                        sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + task.getId());
+                        processSource.addChildElement(sequenceFlow);
+                        connect(sequenceFlow, sourceElement, task);
+
+                        MessageFlow messageFlow = modelInstance.newInstance(MessageFlow.class);
+                        InteractionNode interactionSource = (InteractionNode) task;
+                        InteractionNode interactionTarget = (InteractionNode) targetElement;
+                        messageFlow.setId("Flow-" + task.getId() + "-to-" + targetElement.getId());
+                        messageFlow.setName("Flow-" + task.getId() + "-to-" + targetElement.getId());
+                        collaboration.addChildElement(messageFlow);
+                        messageConnect(messageFlow, interactionSource, interactionTarget);
+                    }
+                    else {
+                        MessageFlow messageFlow = modelInstance.newInstance(MessageFlow.class);
+                        InteractionNode interactionSource = (InteractionNode) sourceElement;
+                        InteractionNode interactionTarget = (InteractionNode) targetElement;
+                        messageFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                        messageFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                        collaboration.addChildElement(messageFlow);
+                        messageConnect(messageFlow, interactionSource, interactionTarget);
+                    }
+                }
 
                 if (flow.getHead() instanceof MyGateway) {
                     int numberOfOutgoings = 0;
@@ -1673,14 +1856,14 @@ public class newUmwandlung {
                         EndEvent endEvent = modelInstance.newInstance(EndEvent.class);
                         endEvent.setId("endEvent-" + headID);
                         endEvent.setName("endEvent-" + headID);
-                        process.addChildElement(endEvent);
+                        processSource.addChildElement(endEvent);
 
                         SequenceFlow sequenceFlow2 = modelInstance.newInstance(SequenceFlow.class);
                         sourceElement = (FlowNode) modelInstance.getModelElementById(headID);
                         targetElement = (FlowNode) modelInstance.getModelElementById("endEvent-" + tailID);
                         sequenceFlow2.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
                         sequenceFlow2.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
-                        process.addChildElement(sequenceFlow2);
+                        processSource.addChildElement(sequenceFlow2);
                         connect(sequenceFlow2, sourceElement, targetElement);
                     }
                 }
@@ -1690,20 +1873,48 @@ public class newUmwandlung {
                 String headID = "ID-" + flow.getHead().getSentenceID() + "-" + flow.getHead().getTokenID();
                 String tailID = "ID-" + flow.getTail().getSentenceID() + "-" + flow.getTail().getTokenID();
 
-                SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
                 FlowNode sourceElement = (FlowNode) modelInstance.getModelElementById(headID);
                 FlowNode targetElement = (FlowNode) modelInstance.getModelElementById(tailID);
-                sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
-                sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
-                process.addChildElement(sequenceFlow);
-                connect(sequenceFlow, sourceElement, targetElement);
 
-                ConditionExpression conditionExpression = modelInstance.newInstance(ConditionExpression.class);
-                conditionExpression.setTextContent(flow.getCondition());
+                Process processSource = findProcessByElement(modelInstance, sourceElement);
+                Process processTarget = findProcessByElement(modelInstance, targetElement);
 
-                sequenceFlow.setConditionExpression(conditionExpression);
+                if (processSource == processTarget) {
+                    SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
+                    sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                    sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
 
-                process.addChildElement(sequenceFlow);
+                    ConditionExpression conditionExpression = modelInstance.newInstance(ConditionExpression.class);
+                    conditionExpression.setTextContent(flow.getCondition());
+                    sequenceFlow.setConditionExpression(conditionExpression);
+
+                    processSource.addChildElement(sequenceFlow);
+                    connect(sequenceFlow, sourceElement, targetElement);
+                }
+                else {
+                    Task task = modelInstance.newInstance(Task.class);
+                    task.setName("continue");
+                    processSource.addChildElement(task);
+
+                    SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
+                    sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + task.getId());
+                    sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + task.getId());
+
+                    ConditionExpression conditionExpression = modelInstance.newInstance(ConditionExpression.class);
+                    conditionExpression.setTextContent(flow.getCondition());
+                    sequenceFlow.setConditionExpression(conditionExpression);
+
+                    processSource.addChildElement(sequenceFlow);
+                    connect(sequenceFlow, sourceElement, task);
+
+                    MessageFlow messageFlow = modelInstance.newInstance(MessageFlow.class);
+                    InteractionNode interactionSource = (InteractionNode) task;
+                    InteractionNode interactionTarget = (InteractionNode) targetElement;
+                    messageFlow.setId("Flow-" + task.getId() + "-to-" + targetElement.getId());
+                    messageFlow.setName("Flow-" + task.getId() + "-to-" + targetElement.getId());
+                    collaboration.addChildElement(messageFlow);
+                    messageConnect(messageFlow, interactionSource, interactionTarget);
+                }
 
                 if (flow.getHead() instanceof MyGateway) {
                     int numberOfOutgoings = 0;
@@ -1716,14 +1927,14 @@ public class newUmwandlung {
                         EndEvent endEvent = modelInstance.newInstance(EndEvent.class);
                         endEvent.setId("endEvent-" + headID);
                         endEvent.setName("endEvent-" + headID);
-                        process.addChildElement(endEvent);
+                        processSource.addChildElement(endEvent);
 
                         SequenceFlow sequenceFlow2 = modelInstance.newInstance(SequenceFlow.class);
                         sourceElement = (FlowNode) modelInstance.getModelElementById(headID);
                         targetElement = (FlowNode) modelInstance.getModelElementById("endEvent-" + headID);
                         sequenceFlow2.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
                         sequenceFlow2.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
-                        process.addChildElement(sequenceFlow2);
+                        processSource.addChildElement(sequenceFlow2);
                         connect(sequenceFlow2, sourceElement, targetElement);
                     }
                 }
@@ -1733,7 +1944,7 @@ public class newUmwandlung {
 
 
 
-    private static void startEventGenerating(BpmnModelInstance modelInstance, Process process) {
+    private static void startEventGenerating(BpmnModelInstance modelInstance) {
         for (MyActivity activity : activities) {
             for (MyFlow flow : flows) {
                 if (activity.equals(flow.getTail())) {
@@ -1742,18 +1953,31 @@ public class newUmwandlung {
                 if (flow.equals(flows.getLast())) {
                     String firstActivityID = "ID-" + activity.getSentenceID() + "-" + activity.getTokenID();
 
+                    FlowNode targetElement = (FlowNode) modelInstance.getModelElementById(firstActivityID);
+                    Process process = findProcessByElement(modelInstance, targetElement);
+
                     StartEvent startEvent = modelInstance.newInstance(StartEvent.class);
                     startEvent.setId(firstActivityID + "start");
                     startEvent.setName(firstActivityID + "start");
                     process.addChildElement(startEvent);
 
+                    Task task = modelInstance.newInstance(Task.class);
+                    task.setId("supportingTask-" + process.getId());
+                    task.setName("supportingTask-" + process.getId());
+                    process.addChildElement(task);
+
                     SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
                     FlowNode sourceElement = (FlowNode) modelInstance.getModelElementById(firstActivityID + "start");
-                    FlowNode targetElement = (FlowNode) modelInstance.getModelElementById(firstActivityID);
-                    sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
-                    sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                    sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + task.getId());
+                    sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + task.getId());
                     process.addChildElement(sequenceFlow);
-                    connect(sequenceFlow, sourceElement, targetElement);
+                    connect(sequenceFlow, sourceElement, task);
+
+                    SequenceFlow sequenceFlow2 = modelInstance.newInstance(SequenceFlow.class);
+                    sequenceFlow2.setId("Flow-" + task.getId() + "-to-" + targetElement.getId());
+                    sequenceFlow2.setName("Flow-" + task.getId() + "-to-" + targetElement.getId());
+                    process.addChildElement(sequenceFlow2);
+                    connect(sequenceFlow2, task, targetElement);
 
                     break;
                 }
@@ -1768,18 +1992,31 @@ public class newUmwandlung {
                 if (flow.equals(flows.getLast())) {
                     String firstGatewayID = "ID-" + gateway.getSentenceID() + "-" + gateway.getTokenID();
 
+                    FlowNode targetElement = (FlowNode) modelInstance.getModelElementById(firstGatewayID);
+                    Process process = findProcessByElement(modelInstance, targetElement);
+
                     StartEvent startEvent = modelInstance.newInstance(StartEvent.class);
                     startEvent.setId(firstGatewayID + "start");
                     startEvent.setName(firstGatewayID + "start");
                     process.addChildElement(startEvent);
 
+                    Task task = modelInstance.newInstance(Task.class);
+                    task.setId("supportingTask-" + process.getId());
+                    task.setName("supportingTask-" + process.getId());
+                    process.addChildElement(task);
+
                     SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
                     FlowNode sourceElement = (FlowNode) modelInstance.getModelElementById(firstGatewayID + "start");
-                    FlowNode targetElement = (FlowNode) modelInstance.getModelElementById(firstGatewayID);
-                    sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
-                    sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                    sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + task.getId());
+                    sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + task.getId());
                     process.addChildElement(sequenceFlow);
-                    connect(sequenceFlow, sourceElement, targetElement);
+                    connect(sequenceFlow, sourceElement, task);
+
+                    SequenceFlow sequenceFlow2 = modelInstance.newInstance(SequenceFlow.class);
+                    sequenceFlow2.setId("Flow-" + task.getId() + "-to-" + targetElement.getId());
+                    sequenceFlow2.setName("Flow-" + task.getId() + "-to-" + targetElement.getId());
+                    process.addChildElement(sequenceFlow2);
+                    connect(sequenceFlow2, task, targetElement);
 
                     break;
                 }
@@ -1789,7 +2026,7 @@ public class newUmwandlung {
 
 
 
-    private static void endEventGenerating(BpmnModelInstance modelInstance, Process process) {
+    private static void endEventGenerating(BpmnModelInstance modelInstance) {
         for (MyActivity activity : activities) {
             for (MyFlow flow : flows) {
                 if (activity.equals(flow.getHead())) {
@@ -1798,20 +2035,21 @@ public class newUmwandlung {
                 if (flow.equals(flows.getLast())) {
                     String lastActivityID = "ID-" + activity.getSentenceID() + "-" + activity.getTokenID();
 
+                    FlowNode sourceElement = (FlowNode) modelInstance.getModelElementById(lastActivityID);
+                    Process process = findProcessByElement(modelInstance, sourceElement);
+
                     EndEvent endEvent = modelInstance.newInstance(EndEvent.class);
                     endEvent.setId("endEvent-" + lastActivityID);
                     endEvent.setName("endEvent-" + lastActivityID);
                     process.addChildElement(endEvent);
     
                     SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
-                    FlowNode sourceElement = (FlowNode) modelInstance.getModelElementById(lastActivityID);
                     FlowNode targetElement = (FlowNode) modelInstance.getModelElementById("endEvent-" + lastActivityID);
                     sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
                     sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
                     process.addChildElement(sequenceFlow);
                     connect(sequenceFlow, sourceElement, targetElement);
                     
-
                     break;
                 }
             }
@@ -1825,13 +2063,15 @@ public class newUmwandlung {
                 if (flow.equals(flows.getLast())) {
                     String lastGatewayID = "ID-" + gateway.getSentenceID() + "-" + gateway.getTokenID();
 
+                    FlowNode sourceElement = (FlowNode) modelInstance.getModelElementById(lastGatewayID);
+                    Process process = findProcessByElement(modelInstance, sourceElement);
+
                     EndEvent endEvent = modelInstance.newInstance(EndEvent.class);
                     endEvent.setId("endEvent-" + lastGatewayID);
                     endEvent.setName("endEvent-" + lastGatewayID);
                     process.addChildElement(endEvent);
     
                     SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
-                    FlowNode sourceElement = (FlowNode) modelInstance.getModelElementById(lastGatewayID);
                     FlowNode targetElement = (FlowNode) modelInstance.getModelElementById("endEvent-" + lastGatewayID);
                     sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
                     sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
@@ -1843,4 +2083,50 @@ public class newUmwandlung {
             }
         }
     } 
+
+    
+
+    private static boolean isActivityInProcess(BpmnModelInstance modelInstance, Process process, String id) {
+        Collection<Activity> activities = process.getChildElementsByType(Activity.class);
+        for (Activity activity : activities) {
+            String activityId = activity.getId();
+            if (activityId.equals(id)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+
+
+    private static void connectProcessParts(BpmnModelInstance modelInstance) {
+        Collection<Process> processes = modelInstance.getModelElementsByType(Process.class);
+        for (Process process : processes) {
+            String supportID = "supportingTask-" + process.getId();
+            boolean supportingTaskInProcess = isActivityInProcess(modelInstance, process, supportID);
+
+            if (!supportingTaskInProcess) {
+                Task task = modelInstance.newInstance(Task.class);
+                task.setId("supportingTask-" + process.getId());
+                task.setName("supportingTask-" + process.getId());
+                process.addChildElement(task);
+            }
+            FlowNode supportingTask = (FlowNode) modelInstance.getModelElementById("supportingTask-" + process.getId());
+
+            Collection<FlowNode> flowNodes = process.getChildElementsByType(FlowNode.class);
+            for (FlowNode flowNode : flowNodes) {
+                if ((flowNode.getIncoming().isEmpty()) && ((flowNode instanceof Activity) || (flowNode instanceof Gateway)) && !(flowNode == supportingTask)) {
+                    SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
+                    process.addChildElement(sequenceFlow);
+                    connect(sequenceFlow, supportingTask, flowNode);
+
+                    ConditionExpression conditionExpression = modelInstance.newInstance(ConditionExpression.class);
+                    conditionExpression.setTextContent("supportingFlow");
+    
+                    sequenceFlow.setConditionExpression(conditionExpression);
+                    process.addChildElement(sequenceFlow);
+                }
+            }
+        }
+    }
 }
