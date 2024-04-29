@@ -1308,26 +1308,6 @@ public class newUmwandlung {
         participant.setName(actor.getName());
         participant.setProcess(process);
         collaboration.addChildElement(participant);
-
-        for (MyActivity activity : activities) {
-            if (activity.getPerformer() == null) {
-                boolean participantExist = participantExists("SystemLane", collaboration);
-                if (!participantExist) {
-                    Process systemProcess = modelInstance.newInstance(Process.class);
-                    systemProcess.setId("SystemLane-Process");
-                    systemProcess.setExecutable(true);
-                    modelInstance.getDefinitions().addChildElement(systemProcess);
-
-                    participant = modelInstance.newInstance(Participant.class);
-                    participant.setId("SystemLane");
-                    participant.setName("SystemLane");
-                    participant.setProcess(systemProcess);
-                    collaboration.addChildElement(participant);
-
-                    return;
-                }
-            }
-        }
     }
 
 
@@ -1380,20 +1360,172 @@ public class newUmwandlung {
 
 
 
+    private static MyActivity nextElementOnLeftIsActivity(BpmnModelInstance modelInstance, MyActivity activity) {
+        MyActivity foundActivity = null;
+
+        for (MyFlow flow : flows) {
+            if ((flow.getTail() == activity) && (flow.getHead() instanceof MyActivity)) {
+                foundActivity = (MyActivity) flow.getHead();
+                return foundActivity;
+            }
+        } 
+        return null;
+    }
+
+
+
+    private static MyGateway nextElementOnLeftIsGateway(BpmnModelInstance modelInstance, MyActivity activity) {
+        MyGateway foundGateway = null;
+
+        for (MyFlow flow : flows) {
+            if ((flow.getTail() == activity) && (flow.getHead() instanceof MyGateway)) {
+                foundGateway = (MyGateway) flow.getHead();
+                return foundGateway;
+            }
+        } 
+        return null;
+    }
+
+
+
+    private static MyActivity nextElementOnRightIsActivity(BpmnModelInstance modelInstance, MyActivity activity) {
+        MyActivity foundActivity = null;
+
+        for (MyFlow flow : flows) {
+            if ((flow.getHead() == activity) && (flow.getTail() instanceof MyActivity)) {
+                foundActivity = (MyActivity) flow.getTail();
+                return foundActivity;
+            }
+        } 
+        return null;
+    }
+
+
+
+    private static MyGateway nextElementOnRightIsGateway(BpmnModelInstance modelInstance, MyActivity activity) {
+        MyGateway foundGateway = null;
+
+        for (MyFlow flow : flows) {
+            if ((flow.getHead() == activity) && (flow.getTail() instanceof MyGateway)) {
+                foundGateway = (MyGateway) flow.getTail();
+                return foundGateway;
+            }
+        } 
+        return null;
+    }
+
+
+
     private static Process findProcessWithActivity(BpmnModelInstance modelInstance, MyActivity activity) {
         if (activity.getPerformer() == null) {
-            String processID = "SystemLane-Process";
-            for (Process process : modelInstance.getModelElementsByType(Process.class)) {
-                if (process.getId().equals(processID)) {
-                    return process;
-                }
+            Process process = findProcessWithActivityLeft(modelInstance, activity);
+            if (process == null) {
+                process = findProcessWithActivityRight(modelInstance, activity);
+                return process;
             }
+            return process;
         }
 
         String processID = activity.getPerformer().getName() + "-Process";
         for (Process process : modelInstance.getModelElementsByType(Process.class)) {
             if (process.getId().equals(processID)) {
                 return process;
+            }
+        }
+        return null;
+    }
+
+
+
+    private static Process findProcessWithActivityLeft(BpmnModelInstance modelInstance, MyActivity activity) {
+        MyGateway foundGateway = null;
+        MyActivity foundActivity = null;
+        Process process = null;
+
+        for (MyFlow flow : flows) {
+            if ((flow.getTail() == activity) && (flow.getHead() instanceof MyActivity)) {
+                foundActivity = (MyActivity) flow.getHead();
+                while(true) {
+                    if (foundActivity.getPerformer() == null) {
+                        MyActivity newFoundActivity = nextElementOnLeftIsActivity(modelInstance, foundActivity);
+                        if (newFoundActivity != null) {
+                            if (newFoundActivity.getPerformer() != null) {
+                                process = findProcessWithActivity(modelInstance, newFoundActivity);
+                                return process;
+                            }else {
+                                foundActivity = newFoundActivity;
+                                continue;
+                            }
+                        }
+                        MyGateway newFoundGateway = nextElementOnLeftIsGateway(modelInstance, foundActivity);
+                        if (newFoundGateway != null) {
+                            process = findProcessWithGatewayLeft(modelInstance, newFoundGateway);
+                            return process;
+                        }
+                        return null;
+                    }else {
+                        process = findProcessWithActivity(modelInstance, foundActivity);
+                        return process;
+                    }
+                }
+            }
+
+            if ((flow.getTail() == activity) && (flow.getHead() instanceof MyGateway)) {
+                foundGateway = (MyGateway) flow.getHead();
+                process = findProcessWithGatewayLeft(modelInstance, foundGateway);
+                if (process == null) {
+                    return null;
+                }else {
+                    return process;
+                }
+            }
+        } 
+        return null;
+    }
+
+
+
+    private static Process findProcessWithActivityRight(BpmnModelInstance modelInstance, MyActivity activity) {
+        MyGateway foundGateway = null;
+        MyActivity foundActivity = null;
+        Process process = null;
+
+        for (MyFlow flow : flows) {
+            if ((flow.getHead() == activity) && (flow.getTail() instanceof MyActivity)) {
+                foundActivity = (MyActivity) flow.getTail();
+                while(true) {
+                    if (foundActivity.getPerformer() == null) {
+                        MyActivity newFoundActivity = nextElementOnRightIsActivity(modelInstance, foundActivity);
+                        if (newFoundActivity != null) {
+                            if (newFoundActivity.getPerformer() != null) {
+                                process = findProcessWithActivity(modelInstance, newFoundActivity);
+                                return process;
+                            }else {
+                                foundActivity = newFoundActivity;
+                                continue;
+                            }
+                        }
+                        MyGateway newFoundGateway = nextElementOnRightIsGateway(modelInstance, foundActivity);
+                        if (newFoundGateway != null) {
+                            process = findProcessWithGatewayRight(modelInstance, newFoundGateway);
+                            return process;
+                        }
+                        return null;
+                    }else {
+                        process = findProcessWithActivity(modelInstance, foundActivity);
+                        return process;
+                    }
+                }
+            }
+
+            if ((flow.getHead() == activity) && (flow.getTail() instanceof MyGateway)) {
+                foundGateway = (MyGateway) flow.getTail();
+                process = findProcessWithGatewayRight(modelInstance, foundGateway);
+                if (process == null) {
+                    return null;
+                }else {
+                    return process;
+                }
             }
         }
         return null;
@@ -1668,8 +1800,29 @@ public class newUmwandlung {
         for (MyFlow flow : flows) {
             if ((flow.getTail() == gateway) && (flow.getHead() instanceof MyActivity)) {
                 foundActivity = (MyActivity) flow.getHead();
-                process = findProcessWithActivity(modelInstance, foundActivity);
-                return process;
+                while(true) {
+                    if (foundActivity.getPerformer() == null) {
+                        MyActivity newFoundActivity = nextElementOnLeftIsActivity(modelInstance, foundActivity);
+                        if (newFoundActivity != null) {
+                            if (newFoundActivity.getPerformer() != null) {
+                                process = findProcessWithActivity(modelInstance, newFoundActivity);
+                                return process;
+                            }else {
+                                foundActivity = newFoundActivity;
+                                continue;
+                            }
+                        }
+                        MyGateway newFoundGateway = nextElementOnLeftIsGateway(modelInstance, foundActivity);
+                        if (newFoundGateway != null) {
+                            process = findProcessWithGatewayLeft(modelInstance, newFoundGateway);
+                            return process;
+                        }
+                        return null;
+                    }else {
+                        process = findProcessWithActivity(modelInstance, foundActivity);
+                        return process;
+                    }
+                }
             }
 
             if ((flow.getTail() == gateway) && (flow.getHead() instanceof MyGateway)) {
@@ -1695,13 +1848,34 @@ public class newUmwandlung {
         for (MyFlow flow : flows) {
             if ((flow.getHead() == gateway) && (flow.getTail() instanceof MyActivity)) {
                 foundActivity = (MyActivity) flow.getTail();
-                process = findProcessWithActivity(modelInstance, foundActivity);
-                return process;
+                while(true) {
+                    if (foundActivity.getPerformer() == null) {
+                        MyActivity newFoundActivity = nextElementOnRightIsActivity(modelInstance, foundActivity);
+                        if (newFoundActivity != null) {
+                            if (newFoundActivity.getPerformer() != null) {
+                                process = findProcessWithActivity(modelInstance, newFoundActivity);
+                                return process;
+                            }else {
+                                foundActivity = newFoundActivity;
+                                continue;
+                            }
+                        }
+                        MyGateway newFoundGateway = nextElementOnRightIsGateway(modelInstance, foundActivity);
+                        if (newFoundGateway != null) {
+                            process = findProcessWithGatewayRight(modelInstance, newFoundGateway);
+                            return process;
+                        }
+                        return null;
+                    }else {
+                        process = findProcessWithActivity(modelInstance, foundActivity);
+                        return process;
+                    }
+                }
             }
 
             if ((flow.getHead() == gateway) && (flow.getTail() instanceof MyGateway)) {
                 foundGateway = (MyGateway) flow.getTail();
-                process = findProcessWithGatewayLeft(modelInstance, foundGateway);
+                process = findProcessWithGatewayRight(modelInstance, foundGateway);
                 if (process == null) {
                     return null;
                 }else {
