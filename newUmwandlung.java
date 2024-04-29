@@ -968,7 +968,7 @@ public class newUmwandlung {
 
         try {
             Bpmn.validateModel(modelInstance);
-            File file = new File("ergebnis.bpmn");
+            File file = new File("generate/ergebnis.bpmn");
             file.createNewFile();
     
             String bpmnString = Bpmn.convertToString(modelInstance);
@@ -1187,10 +1187,11 @@ public class newUmwandlung {
                 String word = token.get(CoreAnnotations.TextAnnotation.class);
                 String pos = token.get(CoreAnnotations.PartOfSpeechAnnotation.class);
 
-                // POS-Tags überprüfen und entfernen 
+                /* POS-Tags überprüfen und entfernen (bei data-Object erstmal nicht?)
                 if (!pos.equals("DT") && !pos.equals("IN")) {
                     cleanedTokens.add(word);
-                }
+                }*/
+                cleanedTokens.add(word);
             }
         }
         dataObjectLabel = String.join("_", cleanedTokens);
@@ -1443,6 +1444,7 @@ public class newUmwandlung {
                     task.addChildElement(association);
                 }
 
+                /* normaler Task funktioniert damit nicht -> userTask z.B. schon
                 if (activity.getFurtherSpecification() != null) {
                     CamundaProperties camundaProperties = modelInstance.newInstance(CamundaProperties.class);
                     task.builder().addExtensionElement(camundaProperties);
@@ -1451,7 +1453,7 @@ public class newUmwandlung {
                     property.setCamundaName("Kommentar");
                     property.setCamundaValue(activity.getFurtherSpecification());
                     task.builder().addExtensionElement(property);
-                }
+                }*/
             }
 
             if (activity.getPerformer() != null) {
@@ -1471,7 +1473,9 @@ public class newUmwandlung {
                     task.addChildElement(association);
                 }
 
+                /* normaler Task funktioniert damit nicht -> userTask z.B. schon
                 for (MyActor actor : activity.getFurtherPerformers()) {
+                    
                     CamundaProperties camundaProperties = modelInstance.newInstance(CamundaProperties.class);
                     task.builder().addExtensionElement(camundaProperties);
 
@@ -1479,8 +1483,9 @@ public class newUmwandlung {
                     property.setCamundaName("Kommentar");
                     property.setCamundaValue("Further-Actor_" + actor.getName());
                     task.builder().addExtensionElement(property);
-                }
+                }*/
 
+                /* normaler Task funktioniert damit nicht -> userTask z.B. schon
                 if (activity.getFurtherSpecification() != null) {
                     CamundaProperties camundaProperties = modelInstance.newInstance(CamundaProperties.class);
                     task.builder().addExtensionElement(camundaProperties);
@@ -1489,7 +1494,7 @@ public class newUmwandlung {
                     property.setCamundaName("Kommentar");
                     property.setCamundaValue(activity.getFurtherSpecification());
                     task.builder().addExtensionElement(property);
-                }
+                }*/
             }
         }
         else {
@@ -1520,7 +1525,6 @@ public class newUmwandlung {
                     InteractionNode sourceElement = (InteractionNode) sourceTask;
                     InteractionNode targetElement = (InteractionNode) targetTask;
                     messageFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
-                    messageFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
                     collaboration.addChildElement(messageFlow);
                     messageConnect(messageFlow, sourceElement, targetElement);
                 }
@@ -1572,7 +1576,6 @@ public class newUmwandlung {
                     InteractionNode sourceElement = (InteractionNode) sourceTask;
                     InteractionNode targetElement = (InteractionNode) targetTask;
                     messageFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
-                    messageFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
                     collaboration.addChildElement(messageFlow);
                     messageConnect(messageFlow, sourceElement, targetElement);
                 }
@@ -1720,14 +1723,12 @@ public class newUmwandlung {
         if (mygateway.getType().equals("xor")) {
             ExclusiveGateway gateway = modelInstance.newInstance(ExclusiveGateway.class);
             gateway.setId("ID-" + mygateway.getSentenceID() + "-" + mygateway.getTokenID());
-            gateway.setName("ID-" + mygateway.getSentenceID() + "-" + mygateway.getTokenID());
             process.addChildElement(gateway);
         }
 
         if (mygateway.getType().equals("and")) {
             ParallelGateway gateway = modelInstance.newInstance(ParallelGateway.class);
             gateway.setId("ID-" + mygateway.getSentenceID() + "-" + mygateway.getTokenID());
-            gateway.setName("ID-" + mygateway.getSentenceID() + "-" + mygateway.getTokenID());
             process.addChildElement(gateway);
         }
     }
@@ -1756,14 +1757,12 @@ public class newUmwandlung {
 
                 EndEvent endEvent = modelInstance.newInstance(EndEvent.class);
                 endEvent.setId("endEvent-" + tailID);
-                endEvent.setName("endEvent-" + tailID);
                 process.addChildElement(endEvent);
 
                 FlowNode targetElement = (FlowNode) modelInstance.getModelElementById("endEvent-" + tailID);
 
                 SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
                 sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
-                sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
                 process.addChildElement(sequenceFlow);
                 connect(sequenceFlow, sourceElement, targetElement);
             }
@@ -1777,14 +1776,13 @@ public class newUmwandlung {
 
                 EndEvent endEvent = modelInstance.newInstance(EndEvent.class);
                 endEvent.setId("endEvent-" + tailID);
-                endEvent.setName("endEvent-" + tailID);
                 process.addChildElement(endEvent);
 
                 FlowNode targetElement = (FlowNode) modelInstance.getModelElementById("endEvent-" + tailID);
 
                 SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
                 sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
-                sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                sequenceFlow.setName(flow.getCondition());
                 process.addChildElement(sequenceFlow);
                 connect(sequenceFlow, sourceElement, targetElement);
 
@@ -1810,7 +1808,6 @@ public class newUmwandlung {
                 if (processSource == processTarget) {
                     SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
                     sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
-                    sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
                     processSource.addChildElement(sequenceFlow);
                     connect(sequenceFlow, sourceElement, targetElement);
                 }
@@ -1822,7 +1819,6 @@ public class newUmwandlung {
 
                         SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
                         sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + task.getId());
-                        sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + task.getId());
                         processSource.addChildElement(sequenceFlow);
                         connect(sequenceFlow, sourceElement, task);
 
@@ -1830,7 +1826,6 @@ public class newUmwandlung {
                         InteractionNode interactionSource = (InteractionNode) task;
                         InteractionNode interactionTarget = (InteractionNode) targetElement;
                         messageFlow.setId("Flow-" + task.getId() + "-to-" + targetElement.getId());
-                        messageFlow.setName("Flow-" + task.getId() + "-to-" + targetElement.getId());
                         collaboration.addChildElement(messageFlow);
                         messageConnect(messageFlow, interactionSource, interactionTarget);
                     }
@@ -1839,7 +1834,6 @@ public class newUmwandlung {
                         InteractionNode interactionSource = (InteractionNode) sourceElement;
                         InteractionNode interactionTarget = (InteractionNode) targetElement;
                         messageFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
-                        messageFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
                         collaboration.addChildElement(messageFlow);
                         messageConnect(messageFlow, interactionSource, interactionTarget);
                     }
@@ -1855,14 +1849,12 @@ public class newUmwandlung {
                     if (numberOfOutgoings < 2) {
                         EndEvent endEvent = modelInstance.newInstance(EndEvent.class);
                         endEvent.setId("endEvent-" + headID);
-                        endEvent.setName("endEvent-" + headID);
                         processSource.addChildElement(endEvent);
 
                         SequenceFlow sequenceFlow2 = modelInstance.newInstance(SequenceFlow.class);
                         sourceElement = (FlowNode) modelInstance.getModelElementById(headID);
                         targetElement = (FlowNode) modelInstance.getModelElementById("endEvent-" + tailID);
                         sequenceFlow2.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
-                        sequenceFlow2.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
                         processSource.addChildElement(sequenceFlow2);
                         connect(sequenceFlow2, sourceElement, targetElement);
                     }
@@ -1882,7 +1874,7 @@ public class newUmwandlung {
                 if (processSource == processTarget) {
                     SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
                     sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
-                    sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
+                    sequenceFlow.setName(flow.getCondition());
 
                     ConditionExpression conditionExpression = modelInstance.newInstance(ConditionExpression.class);
                     conditionExpression.setTextContent(flow.getCondition());
@@ -1898,7 +1890,7 @@ public class newUmwandlung {
 
                     SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
                     sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + task.getId());
-                    sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + task.getId());
+                    sequenceFlow.setName(flow.getCondition());
 
                     ConditionExpression conditionExpression = modelInstance.newInstance(ConditionExpression.class);
                     conditionExpression.setTextContent(flow.getCondition());
@@ -1911,7 +1903,6 @@ public class newUmwandlung {
                     InteractionNode interactionSource = (InteractionNode) task;
                     InteractionNode interactionTarget = (InteractionNode) targetElement;
                     messageFlow.setId("Flow-" + task.getId() + "-to-" + targetElement.getId());
-                    messageFlow.setName("Flow-" + task.getId() + "-to-" + targetElement.getId());
                     collaboration.addChildElement(messageFlow);
                     messageConnect(messageFlow, interactionSource, interactionTarget);
                 }
@@ -1926,14 +1917,12 @@ public class newUmwandlung {
                     if (numberOfOutgoings < 2) {
                         EndEvent endEvent = modelInstance.newInstance(EndEvent.class);
                         endEvent.setId("endEvent-" + headID);
-                        endEvent.setName("endEvent-" + headID);
                         processSource.addChildElement(endEvent);
 
                         SequenceFlow sequenceFlow2 = modelInstance.newInstance(SequenceFlow.class);
                         sourceElement = (FlowNode) modelInstance.getModelElementById(headID);
                         targetElement = (FlowNode) modelInstance.getModelElementById("endEvent-" + headID);
                         sequenceFlow2.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
-                        sequenceFlow2.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
                         processSource.addChildElement(sequenceFlow2);
                         connect(sequenceFlow2, sourceElement, targetElement);
                     }
@@ -1958,26 +1947,38 @@ public class newUmwandlung {
 
                     StartEvent startEvent = modelInstance.newInstance(StartEvent.class);
                     startEvent.setId(firstActivityID + "start");
-                    startEvent.setName(firstActivityID + "start");
                     process.addChildElement(startEvent);
 
                     Task task = modelInstance.newInstance(Task.class);
                     task.setId("supportingTask-" + process.getId());
-                    task.setName("supportingTask-" + process.getId());
+                    task.setName("supportingTask");
                     process.addChildElement(task);
+
+                    ExclusiveGateway gateway = modelInstance.newInstance(ExclusiveGateway.class);
+                    gateway.setId("supportingTask_Gateway-" + process.getId());
+                    process.addChildElement(gateway);
 
                     SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
                     FlowNode sourceElement = (FlowNode) modelInstance.getModelElementById(firstActivityID + "start");
                     sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + task.getId());
-                    sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + task.getId());
                     process.addChildElement(sequenceFlow);
                     connect(sequenceFlow, sourceElement, task);
 
                     SequenceFlow sequenceFlow2 = modelInstance.newInstance(SequenceFlow.class);
-                    sequenceFlow2.setId("Flow-" + task.getId() + "-to-" + targetElement.getId());
-                    sequenceFlow2.setName("Flow-" + task.getId() + "-to-" + targetElement.getId());
+                    sequenceFlow2.setId("Flow-" + task.getId() + "-to-" + gateway.getId());
                     process.addChildElement(sequenceFlow2);
-                    connect(sequenceFlow2, task, targetElement);
+                    connect(sequenceFlow2, task, gateway);
+
+                    SequenceFlow sequenceFlow3 = modelInstance.newInstance(SequenceFlow.class);
+                    sequenceFlow3.setId("Flow-" + gateway.getId() + "-to-" + targetElement.getId());
+                    sequenceFlow3.setName("Process_Start");
+                    process.addChildElement(sequenceFlow3);
+                    connect(sequenceFlow3, gateway, targetElement);
+
+                    ConditionExpression conditionExpression = modelInstance.newInstance(ConditionExpression.class);
+                    conditionExpression.setTextContent("Process_Start");
+                    sequenceFlow3.setConditionExpression(conditionExpression);
+                    process.addChildElement(sequenceFlow3);
 
                     break;
                 }
@@ -1997,26 +1998,38 @@ public class newUmwandlung {
 
                     StartEvent startEvent = modelInstance.newInstance(StartEvent.class);
                     startEvent.setId(firstGatewayID + "start");
-                    startEvent.setName(firstGatewayID + "start");
                     process.addChildElement(startEvent);
 
                     Task task = modelInstance.newInstance(Task.class);
                     task.setId("supportingTask-" + process.getId());
-                    task.setName("supportingTask-" + process.getId());
+                    task.setName("supportingTask");
                     process.addChildElement(task);
+
+                    ExclusiveGateway gateway2 = modelInstance.newInstance(ExclusiveGateway.class);
+                    gateway2.setId("supportingTask_Gateway-" + process.getId());
+                    process.addChildElement(gateway2);
 
                     SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
                     FlowNode sourceElement = (FlowNode) modelInstance.getModelElementById(firstGatewayID + "start");
                     sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + task.getId());
-                    sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + task.getId());
                     process.addChildElement(sequenceFlow);
                     connect(sequenceFlow, sourceElement, task);
 
                     SequenceFlow sequenceFlow2 = modelInstance.newInstance(SequenceFlow.class);
-                    sequenceFlow2.setId("Flow-" + task.getId() + "-to-" + targetElement.getId());
-                    sequenceFlow2.setName("Flow-" + task.getId() + "-to-" + targetElement.getId());
+                    sequenceFlow2.setId("Flow-" + task.getId() + "-to-" + gateway2.getId());
                     process.addChildElement(sequenceFlow2);
-                    connect(sequenceFlow2, task, targetElement);
+                    connect(sequenceFlow2, task, gateway2);
+
+                    SequenceFlow sequenceFlow3 = modelInstance.newInstance(SequenceFlow.class);
+                    sequenceFlow3.setId("Flow-" + gateway2.getId() + "-to-" + targetElement.getId());
+                    sequenceFlow3.setName("Process_Start");
+                    process.addChildElement(sequenceFlow3);
+                    connect(sequenceFlow3, gateway2, targetElement);
+
+                    ConditionExpression conditionExpression = modelInstance.newInstance(ConditionExpression.class);
+                    conditionExpression.setTextContent("Process_Start");
+                    sequenceFlow3.setConditionExpression(conditionExpression);
+                    process.addChildElement(sequenceFlow3);
 
                     break;
                 }
@@ -2040,13 +2053,11 @@ public class newUmwandlung {
 
                     EndEvent endEvent = modelInstance.newInstance(EndEvent.class);
                     endEvent.setId("endEvent-" + lastActivityID);
-                    endEvent.setName("endEvent-" + lastActivityID);
                     process.addChildElement(endEvent);
     
                     SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
                     FlowNode targetElement = (FlowNode) modelInstance.getModelElementById("endEvent-" + lastActivityID);
                     sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
-                    sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
                     process.addChildElement(sequenceFlow);
                     connect(sequenceFlow, sourceElement, targetElement);
                     
@@ -2068,13 +2079,11 @@ public class newUmwandlung {
 
                     EndEvent endEvent = modelInstance.newInstance(EndEvent.class);
                     endEvent.setId("endEvent-" + lastGatewayID);
-                    endEvent.setName("endEvent-" + lastGatewayID);
                     process.addChildElement(endEvent);
     
                     SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
                     FlowNode targetElement = (FlowNode) modelInstance.getModelElementById("endEvent-" + lastGatewayID);
                     sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
-                    sequenceFlow.setName("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
                     process.addChildElement(sequenceFlow);
                     connect(sequenceFlow, sourceElement, targetElement);
 
@@ -2108,9 +2117,19 @@ public class newUmwandlung {
             if (!supportingTaskInProcess) {
                 Task task = modelInstance.newInstance(Task.class);
                 task.setId("supportingTask-" + process.getId());
-                task.setName("supportingTask-" + process.getId());
+                task.setName("supportingTask");
                 process.addChildElement(task);
+
+                ExclusiveGateway gateway = modelInstance.newInstance(ExclusiveGateway.class);
+                gateway.setId("supportingTask_Gateway-" + process.getId());
+                process.addChildElement(gateway);
+
+                SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
+                sequenceFlow.setId("Flow-" + task.getId() + "-to-" + gateway.getId());
+                process.addChildElement(sequenceFlow);
+                connect(sequenceFlow, task, gateway);
             }
+            FlowNode supportingGateway = (FlowNode) modelInstance.getModelElementById("supportingTask_Gateway-" + process.getId());
             FlowNode supportingTask = (FlowNode) modelInstance.getModelElementById("supportingTask-" + process.getId());
 
             Collection<FlowNode> flowNodes = process.getChildElementsByType(FlowNode.class);
@@ -2118,11 +2137,9 @@ public class newUmwandlung {
                 if ((flowNode.getIncoming().isEmpty()) && ((flowNode instanceof Activity) || (flowNode instanceof Gateway)) && !(flowNode == supportingTask)) {
                     SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
                     process.addChildElement(sequenceFlow);
-                    connect(sequenceFlow, supportingTask, flowNode);
+                    connect(sequenceFlow, supportingGateway, flowNode);
 
                     ConditionExpression conditionExpression = modelInstance.newInstance(ConditionExpression.class);
-                    conditionExpression.setTextContent("supportingFlow");
-    
                     sequenceFlow.setConditionExpression(conditionExpression);
                     process.addChildElement(sequenceFlow);
                 }
