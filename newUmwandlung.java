@@ -1,3 +1,6 @@
+//Ausführung zum Beispiel:
+//javac -cp .;lib\* newUmwandlung.java
+//java -cp .;lib\* newUmwandlung jsonFiles/doc-5_1.json
 import org.camunda.bpm.model.bpmn.Bpmn;
 import org.camunda.bpm.model.bpmn.BpmnModelInstance;
 import org.camunda.bpm.model.bpmn.GatewayDirection;
@@ -317,6 +320,7 @@ public class newUmwandlung {
             JsonNode tokenIDsNode = docNode.get(0).get("token-IDs");
             JsonNode tokensNode = docNode.get(0).get("tokens");
 
+            // Actor einfügen + Aktivität über actor performer
             for (JsonNode relationNode : relationsNode) {
 
                 // Bei Relation ist das Element an der Stelle 2 der Typ: (0, 2, 'actor performer', 0, 0)
@@ -393,7 +397,7 @@ public class newUmwandlung {
                 }
             }
 
-            // restliche Aktivitäten einfügen, die nicht in Actor Performer sind
+            // restliche Aktivitäten einfügen, die nicht in Actor Performer sind -> dafür alle Flow Relationen überprüfen
             for (JsonNode relationNode : relationsNode) {
                 String relationType = relationNode.get(2).asText();
 
@@ -468,7 +472,7 @@ public class newUmwandlung {
 
 
 
-            // actor recipient
+            // actor recipient einfügen
             for (JsonNode relationNode : relationsNode) {
                 String relationType = relationNode.get(2).asText();
 
@@ -514,7 +518,7 @@ public class newUmwandlung {
 
 
 
-            // Data Object
+            // Data Object über uses Relation
             for (JsonNode relationNode : relationsNode) {
                 String relationType = relationNode.get(2).asText();
 
@@ -560,7 +564,7 @@ public class newUmwandlung {
             }
 
 
-            // Gateways 
+            // Gateways
             for (JsonNode relationNode : relationsNode) {
                 String relationType = relationNode.get(2).asText();
 
@@ -571,7 +575,7 @@ public class newUmwandlung {
                     Integer flowInSentenceID = relationNode.get(3).asInt();
                     Integer flowInTokenID = relationNode.get(4).asInt();
 
-                    // FlowOut Gateways
+                    // FlowOut Gateways -> Also Relationen, bei denen das Gateway der head ist
                     Iterator<JsonNode> sentenceIDIterator = sentenceIDsNode.iterator();
                     Iterator<JsonNode> tokenIDIterator = tokenIDsNode.iterator();
 
@@ -658,7 +662,8 @@ public class newUmwandlung {
 
                     position = 0;
 
-                    // FlowIn Gateways
+                    // FlowIn Gateways -> Relationen mit Gateway als tail 
+                    // -> nur erstellt, falls es noch nicht existiert
                     while (sentenceIDIterator.hasNext() && tokenIDIterator.hasNext()) {
                         int currentSentenceID = sentenceIDIterator.next().asInt();
                         int currentTokenID = tokenIDIterator.next().asInt();
@@ -760,6 +765,7 @@ public class newUmwandlung {
                     MyActivity existingInActivity = getActivityBySIDANDTID(flowInSentenceID, flowInTokenID);
                     MyGateway existingInGateway = getGatewayByID(flowInSentenceID, flowInTokenID);
 
+                    // Fälle für flow-Vorkommen
                     if (existingOutActivity != null && existingInActivity != null) {
                         MyFlow flow = new MyFlow(existingOutActivity, existingInActivity);
                         flows.add(flow);
@@ -816,6 +822,8 @@ public class newUmwandlung {
                                 for (JsonNode relationNodeCond : relationsNode) {
                                     String relationTypeCond = relationNodeCond.get(2).asText();
 
+                                    // In relationen ist flow->cond.Spec. und cond.Spec.->flow
+                                    // -> daraus einen Flow machen
                                     if ("flow".equals(relationType)) {
                                         Integer flowOutSentenceIDCond = relationNodeCond.get(0).asInt();
                                         Integer flowOutTokenIDCond = relationNodeCond.get(1).asInt();
@@ -877,7 +885,7 @@ public class newUmwandlung {
             }
 
 
-
+            // Further Specification
             for (JsonNode relationNode : relationsNode) {
                 String relationType = relationNode.get(2).asText();
 
@@ -936,6 +944,7 @@ public class newUmwandlung {
         collaboration.setId("collaboration");
         modelInstance.getDefinitions().addChildElement(collaboration);
 
+        // nacheinander alle Elemente einfügen
         for (MyActor actor : actors) {
             actorGenerating(actor, modelInstance, collaboration);
         }
@@ -985,7 +994,7 @@ public class newUmwandlung {
 
 
 
-
+    // hilfe beim verbinden von Elementen
     private static void connect(SequenceFlow flow, FlowNode from, FlowNode to) {
         flow.setSource(from);
         from.getOutgoing().add(flow);
@@ -993,12 +1002,13 @@ public class newUmwandlung {
         to.getIncoming().add(flow);
     }
 
+    // hilfe beim verbinden von Elementen mit message flow
     private static void messageConnect(MessageFlow flow, InteractionNode from, InteractionNode to) {
         flow.setSource(from);
         flow.setTarget(to);
     }
 
-
+    // label von actor erstellen
     private static String actorLabeling(JsonNode ner_tagsNode, JsonNode tokensNode, int position) {
         String actorLabel = tokensNode.get(position).asText();
         position++;
@@ -1047,7 +1057,9 @@ public class newUmwandlung {
     }
 
 
-
+    // label so aufbereiten, dass es verwedet werden kann
+    // manchmal gab es verschiedene labels die nicht zugelassen wurden
+    // -> z.B. wenn mit Zahl anfängt
     private static String cleanLabel(String label) {
         StringBuilder cleanedLabel = new StringBuilder();
         boolean isFirstChar = true;
@@ -1067,7 +1079,7 @@ public class newUmwandlung {
         
 
 
-
+    //actor zurück geben
     private static MyActor getActorByName(String actorName) {
         for (MyActor actor : actors) {
             if (actor.getName().equals(actorName)) {
@@ -1078,7 +1090,7 @@ public class newUmwandlung {
     }
 
 
-
+    // gibt es same Gatway?
     private static boolean sameGatewayExist(JsonNode relationsNode, int sentenceID, int tokenID) {
         for (JsonNode relationNode : relationsNode) {
             String relationType = relationNode.get(2).asText();
@@ -1095,7 +1107,7 @@ public class newUmwandlung {
         return false;
     }
 
-
+    // same Gateway zurück geben
     private static MyGateway getSameGateway(JsonNode relationsNode, int sentenceID, int tokenID) {
         for (JsonNode relationNode : relationsNode) {
             String relationType = relationNode.get(2).asText();
@@ -1114,7 +1126,7 @@ public class newUmwandlung {
         return null;
     }
 
-
+    // label von aktivitäten erstellen
     private static String activityLabeling(JsonNode ner_tagsNode, JsonNode tokensNode, int position) {
         String activityLabel = tokensNode.get(position).asText();
         position++;
@@ -1155,7 +1167,7 @@ public class newUmwandlung {
     }
 
 
-
+    // label von datenobjekten erstellen
     private static String dataObjectLabeling(JsonNode ner_tagsNode, JsonNode tokensNode, int position) {
         String dataObjectLabel = tokensNode.get(position).asText();
         position++;
@@ -1202,7 +1214,7 @@ public class newUmwandlung {
     }
 
 
-
+    // label von furtherSpecification erstellen
     private static String furtherSpecificationLabeling(JsonNode ner_tagsNode, JsonNode tokensNode, int position) {
         String furtherSpecificationLabel = tokensNode.get(position).asText();
         position++;
@@ -1241,7 +1253,7 @@ public class newUmwandlung {
     }
 
 
-
+    // Data object zurück geben
     private static MyDataObject getDataObjectByName(String dataObjectLabel) {
         for (MyDataObject dataObject : dataObjects) {
             if (dataObject.getLabel().equals(dataObjectLabel)) {
@@ -1252,7 +1264,7 @@ public class newUmwandlung {
     }
 
 
-
+    // aktivität mit sentence und token ID bekommen
     private static MyActivity getActivityBySIDANDTID(int sentenceID, int tokenID) {
         for (MyActivity activity : activities) {
             if (activity.getSentenceID().equals(sentenceID) && activity.getTokenID().equals(tokenID)) {
@@ -1263,7 +1275,7 @@ public class newUmwandlung {
     }
 
     
-
+    // gateway mit mention bekommen, falls es in same Gateway vorkommt
     private static MyGateway getGatewayByID(int sentenceID, int tokenID) {
         String mentionID = sentenceID + "-" + tokenID;
 
@@ -1278,7 +1290,7 @@ public class newUmwandlung {
     }
 
 
-
+    // label mit data object auffüllen für das korrekte ganze label
     private static String fullLabel(MyActivity activity) {
         String label = activity.getLabel();
 
@@ -1296,7 +1308,7 @@ public class newUmwandlung {
     }
     
 
-
+    // actor erstellen
     private static void actorGenerating(MyActor actor, BpmnModelInstance modelInstance, Collaboration collaboration) {
         Process process = modelInstance.newInstance(Process.class);
         process.setId(actor.getName() + "-Process");
@@ -1311,7 +1323,7 @@ public class newUmwandlung {
     }
 
 
-
+    // label für condition erstellen
     private static String conditionLabeling(JsonNode ner_tagsNode, JsonNode tokensNode, int position) {
         String conditionLabel = tokensNode.get(position).asText();
         position++;
@@ -1359,7 +1371,7 @@ public class newUmwandlung {
     }
 
 
-
+    // überprüfen ob das Element links eine Aktivität ist, wenn ja return
     private static MyActivity nextElementOnLeftIsActivity(BpmnModelInstance modelInstance, MyActivity activity) {
         MyActivity foundActivity = null;
 
@@ -1373,7 +1385,7 @@ public class newUmwandlung {
     }
 
 
-
+    // überprüfen ob das Element links ein Gateway ist, wenn ja return
     private static MyGateway nextElementOnLeftIsGateway(BpmnModelInstance modelInstance, MyActivity activity) {
         MyGateway foundGateway = null;
 
@@ -1387,7 +1399,7 @@ public class newUmwandlung {
     }
 
 
-
+    // überprüfen ob das Element rechts eine Aktivität ist, wenn ja return
     private static MyActivity nextElementOnRightIsActivity(BpmnModelInstance modelInstance, MyActivity activity) {
         MyActivity foundActivity = null;
 
@@ -1401,7 +1413,7 @@ public class newUmwandlung {
     }
 
 
-
+    // überprüfen ob das Element rechts eine Aktivität ist, wenn ja return
     private static MyGateway nextElementOnRightIsGateway(BpmnModelInstance modelInstance, MyActivity activity) {
         MyGateway foundGateway = null;
 
@@ -1415,7 +1427,9 @@ public class newUmwandlung {
     }
 
 
-
+    // Methode die erst ganz nach links geht, um nächste Aktivität zu finden die in einem Prozess eingefügt ist
+    // -> wenn keine links dann geht sie nach rechts
+    // -> gibt dann den Prozess zurück, in der diese Aktivität ist
     private static Process findProcessWithActivity(BpmnModelInstance modelInstance, MyActivity activity) {
         if (activity.getPerformer() == null) {
             Process process = findProcessWithActivityLeft(modelInstance, activity);
@@ -1436,7 +1450,7 @@ public class newUmwandlung {
     }
 
 
-
+    // -> folgt aus der vorherigen Methode -> hier also nach links
     private static Process findProcessWithActivityLeft(BpmnModelInstance modelInstance, MyActivity activity) {
         MyGateway foundGateway = null;
         MyActivity foundActivity = null;
@@ -1484,7 +1498,7 @@ public class newUmwandlung {
     }
 
 
-
+    // -> folgt aus der vorherigen Methode -> hier also nach rechts
     private static Process findProcessWithActivityRight(BpmnModelInstance modelInstance, MyActivity activity) {
         MyGateway foundGateway = null;
         MyActivity foundActivity = null;
@@ -1532,7 +1546,7 @@ public class newUmwandlung {
     }
 
 
-
+    // Datenobjekte werden eingefügt -> über die Aktivitäten, die die benutzen Objekte speichern 
     private static void dataObjectGenerating(MyDataObject myDataObject, BpmnModelInstance modelInstance) {
         for (MyActivity activity : activities) {
             for (MyDataObject dataObjectFinder : activity.getUsedDataObjects()) {
@@ -1556,7 +1570,7 @@ public class newUmwandlung {
     }
 
 
-
+    // Aktivitäten werden eingefügt
     private static void activityGenerating(MyActivity activity, BpmnModelInstance modelInstance, Collaboration collaboration) {
         if (activity.getRecipient() == null) {
             if (activity.getPerformer() == null) {
@@ -1567,6 +1581,7 @@ public class newUmwandlung {
                 task.setName(fullLabel(activity));
                 process.addChildElement(task);
 
+                // hier werden immer die verbindungen zu den zugehörigen, schon eingefügten Datenobjekten erstellt
                 for (MyDataObject data : activity.getUsedDataObjects()) {
                     String dataObjectReferenceId = data.getLabel() + "-Reference";
                     DataObjectReference dataObjectReference = getDataObjectReferenceById(modelInstance, dataObjectReferenceId);
@@ -1576,7 +1591,8 @@ public class newUmwandlung {
                     task.addChildElement(association);
                 }
 
-                /* normaler Task funktioniert damit nicht -> userTask z.B. schon
+                // Problem mit builder? Kommentare im Modell zunächst nicht höchste Priorität
+                /* normaler Task funktioniert damit nicht -> userTask z.B. schon 
                 if (activity.getFurtherSpecification() != null) {
                     CamundaProperties camundaProperties = modelInstance.newInstance(CamundaProperties.class);
                     task.builder().addExtensionElement(camundaProperties);
@@ -1591,6 +1607,8 @@ public class newUmwandlung {
             if (activity.getPerformer() != null) {
                 Process process = findProcessWithActivity(modelInstance, activity);
 
+                // hier die Fallunterscheidung, ob die Aktivität performer hat
+                // -> mittlerweile unnötig aber falls die art des Tasks daran abhängen kann sinnvoll
                 Task task = modelInstance.newInstance(Task.class);
                 task.setId("ID-" + activity.getSentenceID() + "-" + activity.getTokenID());
                 task.setName(fullLabel(activity));
@@ -1648,6 +1666,8 @@ public class newUmwandlung {
                 }
                 boolean samePerformerRecipient = nextElementOfActivitySamePerformerRecipient(modelInstance, activity);
 
+                // wenn etwas zu recipient geschickt wird, bekommt dieser receive Aktivität
+                // -> nur wenn der Empfänger nicht auch die nächste Aktivität ausführt
                 if (!samePerformerRecipient) {
                     Task targetTask = modelInstance.newInstance(Task.class);
                     targetTask.setName("reveice");
@@ -1670,6 +1690,7 @@ public class newUmwandlung {
                     sourceTask.addChildElement(association);
                 }
 
+                /* 
                 if (activity.getFurtherSpecification() != null) {
                     CamundaProperties camundaProperties = modelInstance.newInstance(CamundaProperties.class);
                     sourceTask.builder().addExtensionElement(camundaProperties);
@@ -1678,7 +1699,7 @@ public class newUmwandlung {
                     property.setCamundaName("Kommentar");
                     property.setCamundaValue(activity.getFurtherSpecification());
                     sourceTask.builder().addExtensionElement(property);
-                }
+                }*/
             }
 
             if (activity.getPerformer() != null) {
@@ -1712,6 +1733,7 @@ public class newUmwandlung {
                     messageConnect(messageFlow, sourceElement, targetElement);
                 }
 
+                /*
                 for (MyActor actor : activity.getFurtherPerformers()) {
                     CamundaProperties camundaProperties = modelInstance.newInstance(CamundaProperties.class);
                     sourceTask.builder().addExtensionElement(camundaProperties);
@@ -1720,7 +1742,7 @@ public class newUmwandlung {
                     property.setCamundaName("Kommentar");
                     property.setCamundaValue("Further-Actor_" + actor.getName());
                     sourceTask.builder().addExtensionElement(property);
-                }
+                }*/
 
                 for (MyDataObject data : activity.getUsedDataObjects()) {
                     String dataObjectReferenceId = data.getLabel() + "-Reference";
@@ -1731,6 +1753,7 @@ public class newUmwandlung {
                     sourceTask.addChildElement(association);
                 }
 
+                /*
                 if (activity.getFurtherSpecification() != null) {
                     CamundaProperties camundaProperties = modelInstance.newInstance(CamundaProperties.class);
                     sourceTask.builder().addExtensionElement(camundaProperties);
@@ -1739,13 +1762,13 @@ public class newUmwandlung {
                     property.setCamundaName("Kommentar");
                     property.setCamundaValue(activity.getFurtherSpecification());
                     sourceTask.builder().addExtensionElement(property);
-                }
+                }*/
             }
         }
     }
 
 
-
+    // prüfen, ob participant existiert
     public static boolean participantExists(String name, Collaboration collaboration) {
         for (Participant participant : collaboration.getParticipants()) {
             if (participant.getName() != null && participant.getName().equals(name)) {
@@ -1756,7 +1779,7 @@ public class newUmwandlung {
     }
 
 
-
+    // DataObjectReference bekommen über ID
     public static DataObjectReference getDataObjectReferenceById(BpmnModelInstance modelInstance, String dataObjectReferenceId) {
         Collection<DataObjectReference> dataObjectReferences = modelInstance.getModelElementsByType(DataObjectReference.class);
     
@@ -1791,7 +1814,8 @@ public class newUmwandlung {
     }
 
 
-
+    // gleich wie findProcessWithActivityLeft() 
+    // -> also zum finden des nächsten Gateways links und zurückgeben des zugehörigen Prozesses
     private static Process findProcessWithGatewayLeft(BpmnModelInstance modelInstance, MyGateway gateway) {
         MyGateway foundGateway = null;
         MyActivity foundActivity = null;
@@ -1839,7 +1863,8 @@ public class newUmwandlung {
     }
 
 
-
+    // wie findProcessWithActivityRight()
+    // -> also zum finden des nächsten Gateways rechts und zurückgeben des zugehörigen Prozesses
     private static Process findProcessWithGatewayRight(BpmnModelInstance modelInstance, MyGateway gateway) {
         MyGateway foundGateway = null;
         MyActivity foundActivity = null;
@@ -1887,7 +1912,7 @@ public class newUmwandlung {
     }
 
 
-
+    // Gateways einfügen -> dazu herausfinden in welchen Prozess davor
     private static void gatewayGenerating(MyGateway mygateway, BpmnModelInstance modelInstance) {
         Process process = findProcessWithGatewayLeft(modelInstance, mygateway);
         if (process == null) {
@@ -1908,7 +1933,7 @@ public class newUmwandlung {
     }
 
 
-
+    // Prozess mit schon eingefügtem Element finden
     private static Process findProcessByElement(BpmnModelInstance modelInstance, FlowNode element) {
         for (Process process : modelInstance.getModelElementsByType(Process.class)) {
             if (element != null && process.getFlowElements().contains(element)) {
@@ -1919,8 +1944,9 @@ public class newUmwandlung {
     }
 
 
-
+    // Flows einfügen
     private static void flowGenerating(MyFlow flow, BpmnModelInstance modelInstance, List<MyFlow> flows, Collaboration collaboration) {
+        // Endevent bei Sonderfall einfügen -> Das endevent, das vorher als Objekt erstellt wurde
         if (flow.getTail() instanceof MyEndevent) {
             if (flow.getCondition() == null) {
                 String headID = "ID-" + flow.getHead().getSentenceID() + "-" + flow.getHead().getTokenID();
@@ -1979,12 +2005,16 @@ public class newUmwandlung {
                 Process processSource = findProcessByElement(modelInstance, sourceElement);
                 Process processTarget = findProcessByElement(modelInstance, targetElement);
 
+                // überprüfen, ob sich die Elemente im selben Prozess befinden
+                // -> Sequenzflow wenn gleicher Prozess, message flow sonst
                 if (processSource == processTarget) {
                     SequenceFlow sequenceFlow = modelInstance.newInstance(SequenceFlow.class);
                     sequenceFlow.setId("Flow-" + sourceElement.getId() + "-to-" + targetElement.getId());
                     processSource.addChildElement(sequenceFlow);
                     connect(sequenceFlow, sourceElement, targetElement);
                 }
+                // Fall, dass message flow benötigt ist
+                // bei gateways auf message flow achten und mit continue-zwischenaktivitäten helfen
                 else {
                     if (flow.getHead() instanceof MyGateway) {
                         Task task = modelInstance.newInstance(Task.class);
@@ -2013,6 +2043,7 @@ public class newUmwandlung {
                     }
                 }
 
+                // Bei gateway die ausgehenden Kanten zählen und bei mehr 0 oder 1 ausgehenden ein endevent einfügen
                 if (flow.getHead() instanceof MyGateway) {
                     int numberOfOutgoings = 0;
                     for (MyFlow flow2 : flows) {
@@ -2034,7 +2065,9 @@ public class newUmwandlung {
                     }
                 }
             }
-
+            
+            // hier der fall, dass der flow eine Condition hat, ansonsten analog
+            // -> normalerweise sollten normale Flows keine Condition annotiert haben aber sicherheitshalber
             if (!(flow.getCondition() == null)) {
                 String headID = "ID-" + flow.getHead().getSentenceID() + "-" + flow.getHead().getTokenID();
                 String tailID = "ID-" + flow.getTail().getSentenceID() + "-" + flow.getTail().getTokenID();
@@ -2106,7 +2139,8 @@ public class newUmwandlung {
     }
 
 
-
+    // startevent im Prozess mit der Aktivität oder Gateway ohne eingehende flüsse
+    // -> dabei dieses vor den supporting Task des Prozesses
     private static void startEventGenerating(BpmnModelInstance modelInstance) {
         for (MyActivity activity : activities) {
             for (MyFlow flow : flows) {
@@ -2212,7 +2246,7 @@ public class newUmwandlung {
     }
 
 
-
+    // Endevent einfach nach alle Aktivitäten oder Gateways ohne ausgehende flüsse
     private static void endEventGenerating(BpmnModelInstance modelInstance) {
         for (MyActivity activity : activities) {
             for (MyFlow flow : flows) {
@@ -2268,7 +2302,7 @@ public class newUmwandlung {
     } 
 
     
-
+    // herausfinden, ob Aktivität in bestimmten Prozess ist
     private static boolean isActivityInProcess(BpmnModelInstance modelInstance, Process process, String id) {
         Collection<Activity> activities = process.getChildElementsByType(Activity.class);
         for (Activity activity : activities) {
@@ -2281,7 +2315,10 @@ public class newUmwandlung {
     }
 
 
-
+    // zum verbinden aller Prozessteile zu einem mithilfe des supporting tasks und Gateways
+    // -> In einem Pool müssen alle Elemente nämlich irgendwie zusammenhägen als ein ganzer Prozess
+    // -> diese einzelnen Elemente kommen nämlich sonst zu Stande, da immer wieder zwischen den Pools gewechselt wird
+    // -> Dabei sind die einzelenen Elemente sonst nicht in einem Pool unbedingt zusammenhängend
     private static void connectProcessParts(BpmnModelInstance modelInstance) {
         Collection<Process> processes = modelInstance.getModelElementsByType(Process.class);
         for (Process process : processes) {
