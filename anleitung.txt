@@ -1,0 +1,25 @@
+- Java Version 21.0.1 wird verwendet
+- Camunda Model API wird verwendet
+	-> befindet sich in camunda-bpm-platform Projekt auf GitHub
+	-> Version: 7.21.0 SNAPSHOT
+	-> jar-Dateien in einen lib Ordner im Verzeichnis des Umwandlungsprogramms einfügen
+- stanford coreNLP wird verwendet 
+	-> stanfordnlp/CoreNLP Github
+	-> Version: 4.5.5
+	-> jar-Dateien in lib Ordner einfügen
+- jackson-core, jackson-annotations, jackson-databind
+	-> vom GitHub von FasterXML
+	-> Version: 2.17.0 SNAPSHOT
+	-> jar-Dateien in lib Ordner einfügen
+- Code kompilieren: 
+	-> javac -cp .;lib\* newUmwandlung.java
+- Code ausführen mit json-Datei von Prozess (hier json-Dateien in Ordner und 5.1 als Beispiel): 
+	-> java -cp .;lib\* newUmwandlung jsonFiles/doc-5_1.json
+- XML wird gespeichert unter generate/ergebnis.bpmn
+	-> also in einem generate Ordner im Verzeichnis
+	-> ergebnis.bpmn ist dann XML ohne di-Infos
+- Um Bild von Prozess zu sehen muss das die XML an Server geschickt werden
+	-> An 132.180.195.1:8000/convert/bpmn2 mit Uni Bayreuth VPN
+	-> POST request senden, in Body muss die XML rein
+	-> man bekommt base64 Kodierung von Bild zurück
+	-> Kodierung auf beliebiger Seite in Bild umwandeln lassen, z.B. base64.guru
